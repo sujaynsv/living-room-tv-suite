@@ -1,75 +1,107 @@
-# Technical Specification — Smart TV Suite (v1.1)
+# Technical Specification — Smart TV Suite (v2.0)
+## Architecture, Data Models, APIs & Implementation Plan
 
-## 1. System Architecture
+## 1. System Architecture Diagram
 
 ```
-smart-tv-suite/
-├── product-requirements.md
-├── technical-spec.md
-├── README.md
-├── launcher/                  # Android TV Leanback Launcher (Kotlin/Gradle)
-│   ├── app/src/main/res/values/config.xml # Pinned apps, sky_intensity=60
-│   └── ...
-├── remote/                    # iPhone / iPad Touch Web Remote
-│   ├── server.py              # ADB Bridge + Wallpaper Upload & Preset API
-│   ├── wallpapers/            # Curated 1080p aesthetic dark wallpapers
-│   │   ├── aurora.jpg
-│   │   ├── midnight.jpg
-│   │   └── cyberpunk.jpg
-│   └── static/
-│       ├── index.html         # Remote UI + Wallpaper Picker & Preset Modal
-│       ├── style.css          # Glassmorphism, animations, touch styling
-│       └── app.js             # Canvas image resize, file upload handler
-├── debloat/                   # TV profile & safe management scripts
-│   ├── thomson-debloat.txt
-│   ├── apply-debloat.sh
-│   └── restore-stock.sh
-└── config.env
+[ STANDALONE TV (Works without Laptop / Server) ]
++-----------------------------------------------------------------------------------+
+|                         THOMSON ANDROID TV LAUNCHER                               |
+|  - UI Header: Fixed Date Formatting (no truncation) + Live Weather Pill           |
+|  - On-TV Assistant Button (Top bar [✨ Search]): Triggers Android Speech/Assist  |
+|  - Startup Cloud Modal: "Hi, who's watching TV?" with D-pad navigable avatar chips|
+|  - Ambient Slideshow Engine: Cross-fade ImageViews from local wallpapers/ dir     |
+|  - Standalone Weather Client: Native background thread queries Open-Meteo         |
++-----------------------------------------------------------------------------------+
+                                         ^
+                                         | Optional Wi-Fi connection
+                                         v
+[ COMPANION SUITE (Optional Laptop/Phone Features) ]
++-----------------------------------------------------------------------------------+
+|                        REMOTE SERVER DAEMON (server.py)                           |
+|  - Gemini LLM Engine: Uses GEMINI_API_KEY to process intent & format TV intents  |
+|  - Multi-Photo Sync: Pushes photos to TV /sdcard/Android/data/.../wallpapers/    |
+|  - ADB Bridge: am broadcast, deep links, keyevents                                |
++-----------------------------------------------------------------------------------+
+                                         ^
+                                         | HTTP / JSON (Port 8080)
++-----------------------------------------------------------------------------------+
+|                            IPHONE / IPAD WEB REMOTE                               |
+|  - HTML5 Web Speech API (Microphone) -> Speech-to-Text                            |
+|  - Multi-Photo Canvas Compressor (1080p WebP/JPEG)                                |
+|  - Voice Assistant Drawer (Chat, Gemini suggestions, "Beam to TV" 1-click button) |
++-----------------------------------------------------------------------------------+
 ```
 
-## 2. API Specifications
+## 2. Component Details
 
-### 2.1 Web Remote Endpoints
+### 2.1 UI Layout Optimization & Date Truncation
+- **File**: `launcher/app/src/main/res/layout/activity_main.xml`
+- **Changes**:
+  - `date`: Change `singleLine` to allow flexible wrapping or standard compact format (`EEE, d MMM`).
+  - Adjust `letterSpacing` from `0.14` to `0.04` to avoid excessive word expansion.
+  - Set `textAllCaps="false"` for elegant natural typography (`Tue, 20 Oct`).
+  - Right-side `topButtons`: Rebalanced margins and widths to give date/weather container ample breathing room.
 
-#### `POST /api/wallpaper`
-- **Content-Type**: `image/jpeg` or `application/octet-stream` (or multipart)
-- **Processing**:
-  - Saved to local `/tmp/tv_wallpaper.jpg`.
-  - Pushed to TV:
-    `adb push /tmp/tv_wallpaper.jpg /sdcard/Android/data/com.gathin.tvhome/files/wallpaper.jpg`
-  - Updates TV config:
-    `echo '{"wallpaper": true, "sky_intensity": 60}' > /tmp/config.json`
-    `adb push /tmp/config.json /sdcard/Android/data/com.gathin.tvhome/files/config.json`
-  - Signals launcher restart:
-    `adb shell am force-stop com.gathin.tvhome && adb shell am start -n com.gathin.tvhome/.MainActivity`
-- **Response**:
-  ```json
-  { "success": true, "message": "Wallpaper updated successfully" }
+### 2.2 Live Weather Widget (Native TV Fetch)
+- **API**: Open-Meteo (`https://api.open-meteo.com/v1/forecast?latitude=12.97&longitude=77.59&current_weather=true` or auto IP location).
+- **Execution**: Background `ExecutorService` in `MainActivity.java`, results posted to UI handler.
+- **Cache**: Cached in `SharedPreferences` for 30 minutes. If offline, gracefully hidden.
+
+### 2.3 On-TV Assistant Button (`btnAssistant`)
+- **File**: `activity_main.xml` (inside `topButtons` container)
+- **Visual**: Glass pill button:
+  - Icon: Sparkle/Mic (`ic_assistant.xml` or text `✨ Search`)
+  - Focus state: Standard TV launcher focus glow
+- **Click Action**:
+  ```java
+  try {
+      Intent intent = new Intent(Intent.ACTION_ASSIST);
+      startActivity(intent);
+  } catch (Exception e) {
+      try {
+          Intent voiceIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+          startActivity(voiceIntent);
+      } catch (Exception ex) {
+          // Fallback to installed YouTube search
+          Intent yt = new Intent(Intent.ACTION_SEARCH);
+          yt.setPackage("com.google.android.youtube.tv");
+          startActivity(yt);
+      }
+  }
   ```
 
-#### `POST /api/wallpaper/preset`
-- **Body**:
-  ```json
-  { "preset": "aurora" }
-  ```
-- **Processing**: Pushes selected preset from `remote/wallpapers/<preset>.jpg` to TV.
+### 2.4 Startup "Who's Watching?" Glass Cloud
+- **Trigger**: In `MainActivity.onCreate()` / `onResume()`, check `isFirstRunSession` (or if TV was woke from sleep after >30 minutes idle).
+- **Layout**: Centered floating cloud card (`dialog_profile_cloud.xml`):
+  - Title: `"Hi, who's watching TV?"` (`outfit_light.xml`, 26sp)
+  - Profile Row:
+    - Chip 1: Sujay (Purple Glow)
+    - Chip 2: Devendra Babu (Cyan Glow)
+    - Chip 3: Sirisha (Rose Glow)
+  - D-pad focus automatically highlights the last active user or first chip.
+  - Clicking `KEYCODE_DPAD_CENTER` / `ENTER` sets active profile, animates the cloud away, and begins session tracking.
+  - Pressing `BACK` dismisses without changing.
 
-#### `POST /api/wallpaper/reset`
-- **Processing**: Removes `wallpaper.jpg` from the TV, resets `config.json` to default.
+### 2.5 Multi-Photo Ambient Slideshow
+- **Storage**: `/sdcard/Android/data/com.gathin.tvhome/files/wallpapers/`
+- **Engine**: In `MainActivity.java`:
+  - Maintains a list of wallpaper files found in the directory.
+  - When length > 1, schedules a `Handler.postDelayed(slideshowRunnable, 45000)`.
+  - Uses two overlapping `ImageView` layers: fades out front image (`alpha 1.0 -> 0.0`) while fading in background image (`alpha 0.0 -> 1.0`) over 1.2 seconds using `ViewPropertyAnimator`.
+  - Garbage collection friendly: reuses bitmaps or decodes downsampled 1080p bitmaps (`BitmapFactory.Options.inSampleSize`).
 
-### 2.2 Client-Side Image Resizing (`app.js`)
-To avoid large file uploads and ensure TV performance:
-- An HTML5 `<canvas>` element reads uploaded photo from iOS Camera Roll.
-- Crops & scales image to **1920 × 1080** pixels (16:9).
-- Encodes as JPEG with 0.85 quality (~180KB).
-- Sends optimized Blob directly to `/api/wallpaper`.
+### 2.6 LLM Voice Assistant & Deep Link Beamer (Web Companion)
+- **Web Remote Microphone**:
+  - HTML5 `webkitSpeechRecognition` / `SpeechRecognition` records voice query in browser.
+  - Sends text to `POST /api/ai/ask`.
+- **Backend API (`server.py`)**:
+  - Endpoint: `POST /api/ai/ask`
+  - Calls Gemini API with user profile context to generate smart recommendations and TV intent actions.
 
-### 2.3 Sky Backdrop Configuration (`config.xml` & `config.json`)
-- Key: `"sky_intensity": 60`
-- Launcher class: `SkyView.java` & `Sky.java`
-- Calculates sunrise/sunset angles based on local system time and renders a GPU-accelerated gradient shader behind tiles.
-
-## 3. Verification & Testing
-1. Push preset wallpaper (Aurora) and verify on live TV screen.
-2. Test file upload endpoint with curl and browser subagent.
-3. Validate memory usage on TV using `adb shell dumpsys meminfo com.gathin.tvhome`.
+## 3. Phased Implementation Plan
+- **Phase 1**: Fix date truncation, add Weather pill, and add on-TV Assistant button in `activity_main.xml` and `MainActivity.java`.
+- **Phase 2**: Implement the startup "Who's watching?" glass cloud modal with D-pad navigation.
+- **Phase 3**: Build Multi-Photo ambient slideshow engine in the launcher + multi-file upload in Web Remote.
+- **Phase 4**: Add AI Voice Assistant to the Web Remote with Gemini integration and 1-tap "Beam to TV".
+- **Phase 5**: Verification on live TV screen, commit to feature branch, merge to `main`, and push.
