@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#D0080B10"
+    android:clipChildren="false">
+
+    <LinearLayout
+        android:layout_width="560dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:background="@drawable/glass_panel"
+        android:padding="28dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_assistant"
+                android:tint="#FFFFFFFF"
+                android:layout_marginEnd="10dp"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Search &amp; Assistant"
+                android:textSize="20sp"
+                android:textColor="#FFFFFFFF"
+                android:fontFamily="@font/outfit_medium" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Choose how you would like to search for movies, shows or music:"
+            android:textSize="14sp"
+            android:textColor="#A0FFFFFF"
+            android:fontFamily="@font/outfit_light"
+            android:layout_marginBottom="20dp" />
+
+        <!-- Search Option 1: YouTube Search -->
+        <LinearLayout
+            android:id="@+id/btnSearchYouTube"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/profile_card_bg"
+            android:focusable="true"
+            android:clickable="true">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🎬 Search YouTube (Movies, Trailers, Music)"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:fontFamily="@font/outfit_medium"
+                android:duplicateParentState="true" />
+        </LinearLayout>
+
+        <!-- Search Option 2: Voice Search (Katniss / System) -->
+        <LinearLayout
+            android:id="@+id/btnSearchVoice"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/profile_card_bg"
+            android:focusable="true"
+            android:clickable="true">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🎙️ Google Voice Search (Remote Mic)"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:fontFamily="@font/outfit_medium"
+                android:duplicateParentState="true" />
+        </LinearLayout>
+
+        <!-- Search Option 3: Phone Remote AI Info -->
+        <LinearLayout
+            android:id="@+id/btnSearchPhoneInfo"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:background="@drawable/profile_card_bg"
+            android:focusable="true"
+            android:clickable="true">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="📱 Phone Web Remote (Tap to open hint)"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:fontFamily="@font/outfit_medium"
+                android:duplicateParentState="true" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

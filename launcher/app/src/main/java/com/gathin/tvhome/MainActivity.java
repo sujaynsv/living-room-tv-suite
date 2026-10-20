@@ -88,7 +88,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Sent by QuickSettingsActivity: open Launcher settings from here so Home rebuilds when they close. */
     static final String ACTION_LAUNCHER_SETTINGS = "com.gathin.tvhome.action.LAUNCHER_SETTINGS";
     /** Tiles per row and dock slots (res/values/config.xml, columns). Set in onCreate. */
-    static int COLUMNS = 4;
+    static int COLUMNS = 5;
     private boolean rtlAppGrid;
     private static final long MINUTE_MS = 60_000L;
     private String liveTvPkg;
@@ -377,27 +377,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         View btnSettings = findViewById(R.id.btnSettings);
 
         if (btnAssistant != null) {
-            btnAssistant.setOnClickListener(v -> {
-                try {
-                    Intent intent = new Intent(Intent.ACTION_ASSIST);
-                    startActivity(intent);
-                } catch (Exception e) {
-                    try {
-                        Intent voiceIntent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-                        voiceIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-                        startActivity(voiceIntent);
-                    } catch (Exception ex) {
-                        try {
-                            Intent yt = new Intent(Intent.ACTION_SEARCH);
-                            yt.setPackage("com.google.android.youtube.tv");
-                            startActivity(yt);
-                        } catch (Exception exc) {
-                            Toast.makeText(this, "Assistant unavailable", Toast.LENGTH_SHORT).show();
-                        }
-                    }
-                }
-            });
+            btnAssistant.setOnClickListener(v -> showSearchChooser());
         }
 
         SharedPreferences profilePrefs = getSharedPreferences("tv_profiles", Context.MODE_PRIVATE);
@@ -1049,8 +1029,83 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     // ---- navigation ------------------------------------------------------------------------------
 
+    public void openAppsFolder() {
+        if (adapter == null) return;
+        java.util.List<AppAdapter.Entry> allApps = adapter.getAllAppsList();
+        if (allApps.isEmpty()) {
+            Toast.makeText(this, "No additional applications found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        android.app.Dialog folderDialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        folderDialog.setContentView(R.layout.dialog_all_apps);
+
+        androidx.recyclerview.widget.RecyclerView allAppsGrid = folderDialog.findViewById(R.id.allAppsGrid);
+        if (allAppsGrid != null) {
+            allAppsGrid.setLayoutManager(new androidx.recyclerview.widget.GridLayoutManager(this, 5));
+            allAppsGrid.setAdapter(new AllAppsAdapter(this, allApps, folderDialog));
+        }
+        folderDialog.show();
+    }
+
+    private void showSearchChooser() {
+        android.app.Dialog searchDialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        searchDialog.setContentView(R.layout.dialog_tv_search);
+
+        View btnSearchYouTube = searchDialog.findViewById(R.id.btnSearchYouTube);
+        View btnSearchVoice = searchDialog.findViewById(R.id.btnSearchVoice);
+        View btnSearchPhoneInfo = searchDialog.findViewById(R.id.btnSearchPhoneInfo);
+
+        if (btnSearchYouTube != null) {
+            btnSearchYouTube.setOnClickListener(v -> {
+                searchDialog.dismiss();
+                try {
+                    Intent yt = new Intent(Intent.ACTION_SEARCH);
+                    yt.setPackage("com.google.android.youtube.tv");
+                    startActivity(yt);
+                } catch (Exception e) {
+                    try {
+                        Intent ytWeb = new Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube://results?q="));
+                        startActivity(ytWeb);
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "Cannot launch YouTube", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
+        }
+
+        if (btnSearchVoice != null) {
+            btnSearchVoice.setOnClickListener(v -> {
+                searchDialog.dismiss();
+                try {
+                    Intent intent = new Intent(Intent.ACTION_ASSIST);
+                    startActivity(intent);
+                } catch (Exception e) {
+                    try {
+                        Intent voiceIntent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                        voiceIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                        startActivity(voiceIntent);
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "Voice search requires remote mic", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
+        }
+
+        if (btnSearchPhoneInfo != null) {
+            btnSearchPhoneInfo.setOnClickListener(v -> {
+                Toast.makeText(this, "Use companion Web Remote (port 8080) for phone voice search!", Toast.LENGTH_LONG).show();
+            });
+        }
+
+        searchDialog.show();
+    }
+
     @Override
     public boolean onTileVerticalKey(int position, int keyCode) {
+        if (adapter != null && adapter.isReordering()) {
+            if (adapter.handleReorderKey(keyCode)) return true;
+        }
         int count = adapter.getItemCount();
         int target;
         // Horizontal: swallow the key at a row's ends so focus never wraps to the next row or
