@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import urllib.parse
+import time
 import uuid
 
 PORT = int(os.environ.get("REMOTE_PORT", 8080))
@@ -161,6 +162,27 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"success": True, "message": "Wallpaper reset to default"})
             return
 
+        if parsed.path == "/api/wallpapers/upload":
+            image_bytes = self.rfile.read(content_len) if content_len > 0 else b""
+            if not image_bytes:
+                self.send_json({"error": "No image data"}, status=400)
+                return
+            wp_id = uuid.uuid4().hex[:8]
+            local_tmp = f"/tmp/wp_{wp_id}.jpg"
+            with open(local_tmp, "wb") as f:
+                f.write(image_bytes)
+            run_adb(["shell", "mkdir", "-p", f"{TV_FILES_DIR}/wallpapers"])
+            run_adb(["push", local_tmp, f"{TV_FILES_DIR}/wallpapers/wp_{wp_id}.jpg"])
+            run_adb(["push", local_tmp, f"{TV_FILES_DIR}/wallpaper.jpg"])
+            cfg_path = "/tmp/theme_config.json"
+            with open(cfg_path, "w") as f:
+                json.dump({"wallpaper": True, "sky_intensity": 60}, f)
+            run_adb(["push", cfg_path, f"{TV_FILES_DIR}/config.json"])
+            rev = uuid.uuid4().hex
+            run_adb(["shell", f"printf '{rev}' > {TV_FILES_DIR}/theme_revision"])
+            self.send_json({"success": True, "message": "Added to TV slideshow gallery!", "wp_id": wp_id})
+            return
+
         # Handle JSON body for other endpoints
         post_data = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
         try:
@@ -261,23 +283,7 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
             ok, out = run_adb(["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", intent_url])
             self.send_json({"success": ok, "intent_url": intent_url})
 
-        elif parsed.path == "/api/wallpapers/upload":
-            image_bytes = self.rfile.read(content_len) if content_len > 0 else b""
-            if not image_bytes:
-                self.send_json({"error": "No image data"}, status=400)
-                return
-            wp_id = uuid.uuid4().hex[:8]
-            local_tmp = f"/tmp/wp_{wp_id}.jpg"
-            with open(local_tmp, "wb") as f:
-                f.write(image_bytes)
-            run_adb(["shell", "mkdir", "-p", f"{TV_FILES_DIR}/wallpapers"])
-            run_adb(["push", local_tmp, f"{TV_FILES_DIR}/wallpapers/wp_{wp_id}.jpg"])
-            # Also ensure config.json has wallpaper: true
-            cfg_path = "/tmp/theme_config.json"
-            with open(cfg_path, "w") as f:
-                json.dump({"wallpaper": True, "sky_intensity": 60}, f)
-            run_adb(["push", cfg_path, f"{TV_FILES_DIR}/config.json"])
-            self.send_json({"success": True, "message": "Added to TV slideshow gallery!"})
+
 
         else:
             self.send_json({"error": "Endpoint not found"}, status=404)

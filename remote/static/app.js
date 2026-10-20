@@ -123,66 +123,68 @@ document.getElementById('btnUploadWp').addEventListener('click', () => {
 });
 
 photoInput.addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
 
-  showToast('Optimizing and uploading...');
+  showToast(`Uploading ${files.length} photo(s) to TV Slideshow...`);
   triggerHaptic();
 
-  // Resize using Canvas to 1920x1080 (16:9)
-  const img = new Image();
-  const reader = new FileReader();
+  let uploaded = 0;
+  for (const file of files) {
+    try {
+      const blob = await new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1920;
+            canvas.height = 1080;
+            const ctx = canvas.getContext('2d');
+            const imgAspect = img.width / img.height;
+            const targetAspect = 1920 / 1080;
+            let drawW, drawH, drawX, drawY;
+            if (imgAspect > targetAspect) {
+              drawH = 1080;
+              drawW = 1080 * imgAspect;
+              drawX = (1920 - drawW) / 2;
+              drawY = 0;
+            } else {
+              drawW = 1920;
+              drawH = 1920 / imgAspect;
+              drawX = 0;
+              drawY = (1080 - drawH) / 2;
+            }
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, 1920, 1080);
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            canvas.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.88);
+          };
+          img.onerror = reject;
+          img.src = evt.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
 
-  reader.onload = (evt) => {
-    img.onload = async () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1920;
-      canvas.height = 1080;
-      const ctx = canvas.getContext('2d');
+      const res = await fetch(`${API_BASE}/api/wallpapers/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/jpeg' },
+        body: blob
+      });
+      const result = await res.json();
+      if (result.success) uploaded++;
+    } catch (err) {
+      console.error('Failed uploading photo:', file.name, err);
+    }
+  }
 
-      // Center crop to 16:9
-      const imgAspect = img.width / img.height;
-      const targetAspect = 1920 / 1080;
-      let drawW, drawH, drawX, drawY;
-
-      if (imgAspect > targetAspect) {
-        drawH = 1080;
-        drawW = 1080 * imgAspect;
-        drawX = (1920 - drawW) / 2;
-        drawY = 0;
-      } else {
-        drawW = 1920;
-        drawH = 1920 / imgAspect;
-        drawX = 0;
-        drawY = (1080 - drawH) / 2;
-      }
-
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, 1920, 1080);
-      ctx.drawImage(img, drawX, drawY, drawW, drawH);
-
-      canvas.toBlob(async (blob) => {
-        try {
-          const res = await fetch(`${API_BASE}/api/wallpaper`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'image/jpeg' },
-            body: blob
-          });
-          const result = await res.json();
-          if (result.success) {
-            showToast('🎉 Wallpaper live on TV!');
-          } else {
-            showToast('Upload failed: ' + result.error);
-          }
-        } catch (err) {
-          showToast('Error uploading wallpaper');
-          console.error(err);
-        }
-      }, 'image/jpeg', 0.88);
-    };
-    img.src = evt.target.result;
-  };
-  reader.readAsDataURL(file);
+  if (uploaded > 0) {
+    showToast(`🎉 Added ${uploaded} photo(s) to TV Slideshow!`);
+  } else {
+    showToast('Failed to upload photos');
+  }
+  photoInput.value = '';
 });
 
 // Reset Wallpaper
@@ -438,5 +440,13 @@ if (btnBeamToTv) {
     } catch (err) {
       showToast('Failed to beam to TV');
     }
+  });
+}
+
+const btnOpenAiBottom = document.getElementById('btnOpenAiBottom');
+if (btnOpenAiBottom) {
+  btnOpenAiBottom.addEventListener('click', () => {
+    aiModal.classList.add('active');
+    aiQueryInput.focus();
   });
 }
