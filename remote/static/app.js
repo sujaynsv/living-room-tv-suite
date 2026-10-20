@@ -278,7 +278,55 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'Backspace' || e.key === 'Escape') sendKey('BACK');
 });
 
+// Device Switcher
+const tvDeviceSelect = document.getElementById('tvDeviceSelect');
+
+async function updateDevices() {
+  if (!tvDeviceSelect) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/devices`);
+    const data = await res.json();
+    if (tvDeviceSelect.options.length === 0 && data.devices) {
+      data.devices.forEach(dev => {
+        const opt = document.createElement('option');
+        opt.value = dev.id;
+        opt.textContent = dev.name;
+        tvDeviceSelect.appendChild(opt);
+      });
+    }
+    if (data.active_device) {
+      tvDeviceSelect.value = data.active_device;
+    }
+  } catch (e) {
+    console.warn('Devices fetch error', e);
+  }
+}
+
+if (tvDeviceSelect) {
+  tvDeviceSelect.addEventListener('change', async (e) => {
+    const selectedId = e.target.value;
+    triggerHaptic();
+    try {
+      const res = await fetch(`${API_BASE}/api/devices/select`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: selectedId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Connected to ${data.device.name}`);
+        updateStatus();
+        updateProfiles();
+      }
+    } catch (err) {
+      showToast('Failed to switch device');
+      console.error(err);
+    }
+  });
+}
+
 // Polling
+updateDevices();
 updateStatus();
 updateProfiles();
 setInterval(() => {

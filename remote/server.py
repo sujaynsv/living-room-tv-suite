@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Smart TV Suite — iPhone / iPad Touch Web Remote Server
-Provides a high-performance web interface over local Wi-Fi to control your Android TV,
+Provides a high-performance web interface over local Wi-Fi to control your Android TVs,
 switch family profiles, track screen time, and upload photos as TV wallpapers.
 """
 
@@ -13,16 +13,31 @@ import socket
 import subprocess
 import sys
 import urllib.parse
+import urllib.request
 import time
 import uuid
 
 PORT = int(os.environ.get("REMOTE_PORT", 8080))
-TV_HOST = os.environ.get("TV_HOST", "192.168.1.8")
-TV_PORT = os.environ.get("TV_PORT", "5555")
-TV_ADDR = f"{TV_HOST}:{TV_PORT}"
+
+DEVICES = {
+    "living_room": {
+        "id": "living_room",
+        "name": "Living Room TV",
+        "addr": os.environ.get("LIVING_ROOM_ADDR", "192.168.1.8:5555")
+    },
+    "bedroom": {
+        "id": "bedroom",
+        "name": "Bedroom TV",
+        "addr": os.environ.get("BEDROOM_ADDR", "192.168.0.11:5555")
+    }
+}
+ACTIVE_DEVICE_ID = os.environ.get("DEFAULT_TV", "living_room")
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 TV_FILES_DIR = "/sdcard/Android/data/com.gathin.tvhome/files"
+
+def get_current_tv_addr():
+    return DEVICES.get(ACTIVE_DEVICE_ID, {}).get("addr", "192.168.1.8:5555")
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -36,7 +51,8 @@ def get_local_ip():
     return ip
 
 def run_adb(args):
-    cmd = ["adb", "-s", TV_ADDR] + args
+    target = get_current_tv_addr()
+    cmd = ["adb", "-s", target] + args
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
         return res.returncode == 0, res.stdout.strip()
@@ -69,17 +85,31 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/api/status":
+        if parsed.path == "/api/devices":
+            self.send_json({
+                "devices": list(DEVICES.values()),
+                "active_device": ACTIVE_DEVICE_ID,
+                "active_addr": get_current_tv_addr()
+            })
+            return
+
+        elif parsed.path == "/api/status":
             ok, out = run_adb(["shell", "dumpsys", "activity", "activities"])
-            current_app = "Unknown"
+            current_app = "Clean TV Home"
             if ok:
-                match = re.search(r"mResumedActivity: ActivityRecord\{[^\}]+ ([\w.]+)/", out)
+                match = re.search(r"mResumedActivity: ActivityRecord\{[^\}]+\s([\w.]+)/", out)
                 if match:
                     current_app = match.group(1)
-            self.send_json({"connected": ok, "tv": TV_ADDR, "current_app": current_app})
+            self.send_json({
+                "connected": ok,
+                "tv": get_current_tv_addr(),
+                "active_device": ACTIVE_DEVICE_ID,
+                "device_name": DEVICES.get(ACTIVE_DEVICE_ID, {}).get("name", "TV"),
+                "current_app": current_app
+            })
+            return
 
         elif parsed.path == "/api/profiles":
-            # Read profile_stats.json from TV
             ok, out = run_adb(["shell", "cat", f"{TV_FILES_DIR}/profile_stats.json"])
             if ok and out.startswith("{"):
                 try:
@@ -88,7 +118,6 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
                     return
                 except Exception:
                     pass
-            # Default fallback if file is not yet created
             self.send_json({
                 "active_profile": "Sujay",
                 "profiles": [
@@ -97,6 +126,7 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
                     {"name": "Sirisha", "watch_time": "0m"}
                 ]
             })
+            return
 
         elif parsed.path == "/api/screenshot":
             run_adb(["shell", "screencap", "-p", "/data/local/tmp/remote_shot.png"])
@@ -114,15 +144,17 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(data)
             else:
                 self.send_json({"error": "Screenshot capture failed"}, status=500)
+            return
+
         else:
             super().do_GET()
 
     def do_POST(self):
+        global ACTIVE_DEVICE_ID
         parsed = urllib.parse.urlparse(self.path)
         content_len = int(self.headers.get("Content-Length", 0))
 
         if parsed.path == "/api/wallpaper":
-            # Receive raw image data
             image_bytes = self.rfile.read(content_len) if content_len > 0 else b""
             if not image_bytes:
                 self.send_json({"error": "No image data received"}, status=400)
@@ -131,22 +163,19 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
             with open(local_wp, "wb") as f:
                 f.write(image_bytes)
 
-            # Push wallpaper to TV
             run_adb(["shell", "mkdir", "-p", TV_FILES_DIR])
             run_adb(["push", local_wp, f"{TV_FILES_DIR}/wallpaper.jpg"])
 
-            # Create & push config.json with wallpaper: true and sky_intensity: 60
             cfg_path = "/tmp/theme_config.json"
             with open(cfg_path, "w") as f:
                 json.dump({"wallpaper": True, "sky_intensity": 60}, f)
             run_adb(["push", cfg_path, f"{TV_FILES_DIR}/config.json"])
 
-            # Set revision marker & restart launcher
             rev = uuid.uuid4().hex
             run_adb(["shell", f"printf '{rev}' > {TV_FILES_DIR}/theme_revision"])
             run_adb(["shell", "am", "force-stop", "com.gathin.tvhome"])
             run_adb(["shell", "am", "start", "-n", "com.gathin.tvhome/.MainActivity"])
-            self.send_json({"success": True, "message": "Wallpaper updated on TV!"})
+            self.send_json({"success": True, "message": f"Wallpaper updated on {DEVICES.get(ACTIVE_DEVICE_ID, {}).get('name')}!"})
             return
 
         elif parsed.path == "/api/wallpaper/reset":
@@ -162,7 +191,7 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"success": True, "message": "Wallpaper reset to default"})
             return
 
-        if parsed.path == "/api/wallpapers/upload":
+        elif parsed.path == "/api/wallpapers/upload":
             image_bytes = self.rfile.read(content_len) if content_len > 0 else b""
             if not image_bytes:
                 self.send_json({"error": "No image data"}, status=400)
@@ -183,14 +212,24 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"success": True, "message": "Added to TV slideshow gallery!", "wp_id": wp_id})
             return
 
-        # Handle JSON body for other endpoints
+        # Handle JSON body
         post_data = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
         try:
             body = json.loads(post_data)
         except Exception:
             body = {}
 
-        if parsed.path == "/api/key":
+        if parsed.path == "/api/devices/select":
+            dev_id = body.get("device_id")
+            if dev_id in DEVICES:
+                ACTIVE_DEVICE_ID = dev_id
+                subprocess.run(["adb", "connect", DEVICES[dev_id]["addr"]], capture_output=True)
+                self.send_json({"success": True, "active_device": ACTIVE_DEVICE_ID, "device": DEVICES[dev_id]})
+            else:
+                self.send_json({"error": f"Unknown device id: {dev_id}"}, status=400)
+            return
+
+        elif parsed.path == "/api/key":
             key_name = body.get("key", "").upper()
             keycode = KEY_MAP.get(key_name, key_name if key_name.startswith("KEYCODE_") else None)
             if not keycode:
@@ -251,7 +290,6 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     reply = f"Here are the best matches for '{query}'"
             else:
-                # Built-in contextual smart matcher
                 q_lower = query.lower()
                 if "comedy" in q_lower or "funny" in q_lower:
                     reply = f"Here are top rated comedy specials & scenes for {profile}:"
@@ -283,8 +321,6 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
             ok, out = run_adb(["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", intent_url])
             self.send_json({"success": ok, "intent_url": intent_url})
 
-
-
         else:
             self.send_json({"error": "Endpoint not found"}, status=404)
 
@@ -298,16 +334,18 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(response)
 
 def main():
-    subprocess.run(["adb", "connect", TV_ADDR], capture_output=True)
+    for dev in DEVICES.values():
+        subprocess.run(["adb", "connect", dev["addr"]], capture_output=True)
     local_ip = get_local_ip()
     server_address = ("0.0.0.0", PORT)
     httpd = http.server.ThreadingHTTPServer(server_address, RemoteRequestHandler)
     print("\n=======================================================")
     print(" 📺 Smart TV Suite — iPhone / iPad Touch Remote Server")
     print("=======================================================")
-    print(f" • Connected to TV:  {TV_ADDR}")
-    print(f" • Mac Local URL:    http://localhost:{PORT}")
-    print(f" • iPhone/iPad URL:  http://{local_ip}:{PORT}")
+    for dev in DEVICES.values():
+        print(f" • TV Device:       {dev['name']} ({dev['addr']})")
+    print(f" • Mac Local URL:   http://localhost:{PORT}")
+    print(f" • iPhone/iPad URL: http://{local_ip}:{PORT}")
     print(" Open the iPhone/iPad URL in Safari and tap 'Add to Home Screen'")
     print("=======================================================\n")
     try:
