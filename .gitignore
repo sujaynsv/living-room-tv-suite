@@ -14,9 +14,13 @@ local.properties
 .cxx/
 captures/
 output-metadata.json
+*.hprof
+*.trace
+*.jks
+*.keystore
 
 # ==========================================
-# Python
+# Python & Virtual Environments
 # ==========================================
 __pycache__/
 *.py[cod]
@@ -45,7 +49,26 @@ wheels/
 .pytest_cache/
 
 # ==========================================
-# IDEs & Editors
+# Runtime Data, Logs & Screen Captures
+# ==========================================
+*.log
+*.tmp
+tmp/
+profile_stats.json
+screen*.png
+screencap*.png
+*.screenshot.png
+
+# ==========================================
+# Environment & Local Configs
+# ==========================================
+.env
+.env.*
+*.env.local
+*.local.env
+
+# ==========================================
+# IDEs & Code Editors
 # ==========================================
 .idea/
 *.iml
@@ -66,8 +89,7 @@ wheels/
 ._*
 .Spotlight-V100
 .Trashes
+.AppleDouble
+.LSOverride
 ehthumbs.db
 Thumbs.db
-*.log
-*.tmp
-tmp/
