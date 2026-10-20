@@ -1,105 +1,86 @@
-# Technical Specification — Smart TV Suite (v3.0)
-## Bedroom Skyworth TV Stick (192.168.0.11:5555) Debloat & Performance Optimization
+# Technical Specification — Smart TV Suite (v3.1)
+## Bedroom Skyworth TV Stick (192.168.0.11:5555) UI Overhaul & Low-RAM Optimization
 
-## 1. Device Context & Hardware Profile
+## 1. Architecture Overview
 
-| Property | Value |
-|---|---|
-| **Manufacturer / Brand** | SkyworthDigital / Skyworth |
-| **Model** | TV Stick (`HP47DX2`) |
-| **Android Version** | Android 14 (API 34) |
-| **IP Address & Port** | `192.168.0.11:5555` |
-| **Total RAM** | 983,496 kB (~1 GB) |
-| **Active Available RAM** | ~280 MB (only ~46 MB free!) |
-| **Primary Bottleneck** | Heavy background services (Calendar sync, OEM QA, Telemetry, SetupWizard, Recommendations) consuming >50% of available memory on 1GB hardware. |
-
-## 2. Safety & Whitelist Guarantee
-
-### 2.1 Protected OTT Streaming Apps (Never Touched)
-```text
-com.netflix.ninja                     # Netflix
-com.google.android.youtube.tv         # YouTube
-in.startv.hotstar                     # Disney+ Hotstar
-com.amazon.amazonvideo.livingroom     # Amazon Prime Video
-com.apple.atve.androidtv.appletv      # Apple TV
-ahaflix.tv                            # Aha
-tv.airtel.xstream.tvapp               # Airtel Xstream
-com.spotify.tv.android                # Spotify
-com.formulaone.production             # Formula 1 TV
-com.google.android.youtube.tvmusic    # YouTube Music
-com.graymatrix.did                    # Zee5 / DID
-com.tcl.browser                       # Web Browser
+```
++---------------------------------------------------------------------------------+
+|                       BEDROOM TV STICK (Skyworth HP47DX2)                      |
+|                                960 MB Total RAM                                 |
++---------------------------------------------------------------------------------+
+          |                                                       |
+          v                                                       v
+[Custom Leanback Launcher]                            [Stock Services Deactivated]
+- com.livingroom.tvlauncher                           - com.google.android.tvlauncher (230MB freed)
+- Memory: ~25 MB RAM                                  - com.google.android.tvrecommendations (66MB freed)
+- 4-App Minimal Dock (Netflix, Prime, Hotstar, YT)   - OEM Telemetry/Testers (already disabled)
+- Apps Folder modal (Aha, Apple TV, Spotify, etc.)
+- Dynamic Wallpapers & Glassmorphism UI
+- Family Profiles & Weather Widget
+          |
+          +-------------------------------------------------------+
+                                  |
+                                  v
+                    [Low-RAM System Parameters]
+                    - max_cached_processes: 4
+                    - window/transition/animator scales: 0.5x
+                    - logcat buffers: flushed
 ```
 
-### 2.2 Critical System & Hardware Daemons (Never Touched)
-```text
-com.mft.rcupair                       # Remote Control Bluetooth Pairing
-com.droidlogic                        # Amlogic Hardware Abstraction Layer
-com.droidlogic.tv.settings            # Display & TV Hardware Settings
-com.android.bluetooth                 # Bluetooth Controller
-com.android.systemui                  # System Status Bar & UI
-com.google.android.gms                # Google Play Services (DRM / Widevine L1)
-com.android.vending                   # Google Play Store
-com.google.android.webview            # System Webview
-com.dolby.android.audio.service       # Dolby Atmos / Audio Engine
+## 2. Component Implementation Details
+
+### 2.1 Launcher Deployment & Home Assignment
+1. Install `launcher/app/build/outputs/apk/debug/app-debug.apk` onto target `192.168.0.11:5555` via ADB:
+   ```bash
+   adb -s 192.168.0.11:5555 install -r launcher/app/build/outputs/apk/debug/app-debug.apk
+   ```
+2. Verify package installation:
+   ```bash
+   adb -s 192.168.0.11:5555 shell pm path com.livingroom.tvlauncher
+   ```
+3. Set `com.livingroom.tvlauncher` as the active home activity:
+   ```bash
+   adb -s 192.168.0.11:5555 shell cmd package set-home-activity com.livingroom.tvlauncher/.MainActivity
+   ```
+4. Disable `com.google.android.tvlauncher` and `com.google.android.tvrecommendations`:
+   ```bash
+   adb -s 192.168.0.11:5555 shell pm disable-user --user 0 com.google.android.tvlauncher
+   adb -s 192.168.0.11:5555 shell pm disable-user --user 0 com.google.android.tvrecommendations
+   ```
+
+### 2.2 Low-RAM Kernel & Activity Manager Tuning
+1. Limit cached background processes to prevent memory thrashing when high-bitrate video streams play:
+   ```bash
+   adb -s 192.168.0.11:5555 shell "device_config put activity_manager max_cached_processes 4"
+   adb -s 192.168.0.11:5555 shell "settings put global activity_manager_constants max_cached_processes=4"
+   ```
+2. Force low-RAM trim on background caches:
+   ```bash
+   adb -s 192.168.0.11:5555 shell am trim-memory com.google.android.gms COMPLETE
+   ```
+
+### 2.3 Rollback / Reversibility Tooling
+Create `debloat/restore-bedroom-tv-stock-launcher.sh`:
+```bash
+#!/usr/bin/env bash
+TARGET="192.168.0.11:5555"
+adb -s $TARGET shell pm enable com.google.android.tvlauncher
+adb -s $TARGET shell pm enable com.google.android.tvrecommendations
+adb -s $TARGET shell cmd package set-home-activity com.google.android.tvlauncher/.MainActivity
+echo "Stock Google TV Launcher restored on $TARGET"
 ```
 
-## 3. Targeted Debloat List
+### 2.4 Multi-TV Remote Server Enhancements (`remote/server.py` & `remote/index.html`)
+1. Add an active device selector in `server.py`:
+   - `DEFAULT_DEVICE = '192.168.1.8:5555'` (Living Room TV)
+   - Supports query parameter or header `?device=bedroom` or `?target=192.168.0.11:5555`.
+2. Add a TV selector pill in the Web Remote UI:
+   - `[ Living Room TV ] [ Bedroom TV ]`
+   - Tapping switches active target seamlessly, allowing the phone remote to send D-Pad navigation, volume, voice assistant, and wallpaper uploads to either room.
 
-The following packages will be safely disabled using `pm disable-user --user 0 <package>`:
-
-```text
-# ---- SKYWORTH / OEM FACTORY & TELEMETRY ----
-com.skyworth.smallclient              # Skyworth ad & telemetry client
-com.skyworth.superservice             # Skyworth cloud telemetry sync
-com.sdt.producttest                   # Skyworth factory testing app
-com.oem.qa                            # OEM QA test tool
-com.oemservice                        # OEM background telemetry daemon
-com.sdt.customization                 # Skyworth customization daemon
-com.sdt.projector.observer            # Projector daemon (unneeded on TV stick)
-com.sdt.vendor                        # Vendor tracking service
-com.homwee.howtocast                  # Third-party adware / cast guide
-com.mtf.ipcountry                     # IP geolocation tracker
-com.google.android.feedback           # Google bug/crash feedback reporter
-com.android.tv.feedbackconsent        # TV feedback consent uploader
-
-# ---- HEAVY UNNEEDED BACKGROUND SERVICES (1GB RAM OPTIMIZATION) ----
-com.google.android.play.games         # Play Games background service
-com.google.android.syncadapters.calendar # Calendar sync (eats 78 MB RAM)
-com.android.providers.calendar        # Calendar provider (eats 49 MB RAM)
-com.android.printspooler              # Print spooler daemon
-com.android.healthconnect.controller  # Health Connect
-com.android.health.connect.backuprestore # Health Connect backup
-com.android.devicelockcontroller      # Device lock background daemon
-com.android.adservices.api            # Android 14 Privacy Sandbox ad daemon
-com.android.ondevicepersonalization.services # On-device ad personalization
-com.android.federatedcompute.services # Federated analytics daemon
-com.google.android.tvrecommendations  # Launcher ad recommendation row generator (63 MB RAM)
-com.google.android.tungsten.setupwraith # Initial setup wizard lingering in RAM (55 MB RAM)
-```
-
-## 4. System Performance & Snappiness Commands
-
-1. **Animation Speedup**:
-   - `settings put global window_animation_scale 0.5`
-   - `settings put global transition_animation_scale 0.5`
-   - `settings put global animator_duration_scale 0.5`
-2. **Buffer Flush**:
-   - `logcat -b all -c`
-
-## 5. Automation Scripts & Reversibility
-
-### 5.1 Apply Script (`debloat/apply-bedroom-tv.sh`)
-Iterates over the list, running:
-`adb -s 192.168.0.11:5555 shell pm disable-user --user 0 <package>`
-Verifies each package is disabled, clears caches, and applies animation scale settings.
-
-### 5.2 Restore Script (`debloat/restore-bedroom-tv.sh`)
-Iterates over the list, running:
-`adb -s 192.168.0.11:5555 shell pm enable <package>`
-Restores animation scales to `1.0`.
-
-## 6. Verification Plan
-1. Check `dumpsys meminfo` and `cat /proc/meminfo` before and after to measure recovered RAM.
-2. Verify all 12 OTT apps launch and run smoothly without crashes.
-3. Test remote D-pad responsiveness and app switching latency.
+## 3. Verification & Validation Steps
+1. **Memory Check**: Verify `MemAvailable` increases above **350 MB** (from the initial 172 MB).
+2. **Launch & Navigation Check**: Launch custom launcher and verify smooth 60fps D-pad focus movement.
+3. **OTT Integrity Check**: Confirm all 10 OTT apps launch properly from both the 4-app dock and the Apps Folder.
+4. **Screencap Capture**: Capture and save `bedroom_custom_launcher_screen.png` to artifacts.
+5. **Rollback Script Test**: Ensure `restore-bedroom-tv-stock-launcher.sh` syntax is validated.
