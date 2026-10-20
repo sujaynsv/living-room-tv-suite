@@ -62,6 +62,8 @@ screencap*.png
 # ==========================================
 # Environment & Local Configs
 # ==========================================
+config.env
+*.env
 .env
 .env.*
 *.env.local
