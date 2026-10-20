@@ -1,8 +1,6 @@
-# Technical Specification — Smart TV Suite
+# Technical Specification — Smart TV Suite (v1.1)
 
 ## 1. System Architecture
-
-The codebase is organized as a clean monorepo:
 
 ```
 smart-tv-suite/
@@ -10,77 +8,68 @@ smart-tv-suite/
 ├── technical-spec.md
 ├── README.md
 ├── launcher/                  # Android TV Leanback Launcher (Kotlin/Gradle)
-│   ├── app/
-│   │   └── src/main/res/values/config.xml # Pinned apps, hardware tuning
-│   ├── build.gradle
-│   ├── gradlew
+│   ├── app/src/main/res/values/config.xml # Pinned apps, sky_intensity=60
 │   └── ...
 ├── remote/                    # iPhone / iPad Touch Web Remote
-│   ├── server.py              # Lightweight HTTP & WebSocket API bridge to ADB
+│   ├── server.py              # ADB Bridge + Wallpaper Upload & Preset API
+│   ├── wallpapers/            # Curated 1080p aesthetic dark wallpapers
+│   │   ├── aurora.jpg
+│   │   ├── midnight.jpg
+│   │   └── cyberpunk.jpg
 │   └── static/
-│       ├── index.html         # Modern touch UI (haptic, dark glassmorphism)
-│       ├── style.css          # iOS HIG touch styling, responsive
-│       └── app.js             # D-Pad, swipe gestures, keypress handlers
+│       ├── index.html         # Remote UI + Wallpaper Picker & Preset Modal
+│       ├── style.css          # Glassmorphism, animations, touch styling
+│       └── app.js             # Canvas image resize, file upload handler
 ├── debloat/                   # TV profile & safe management scripts
-│   ├── thomson-debloat.txt    # Curated package list for Thomson SWTV-20
-│   ├── apply-debloat.sh       # Script to disable telemetry/ads
-│   ├── restore-stock.sh       # Script to rollback to factory state
-│   └── tv.py                  # Direct ADB communication module
-└── config.env                 # Centralized configuration (TV_IP=192.168.1.8, PORT=5555)
+│   ├── thomson-debloat.txt
+│   ├── apply-debloat.sh
+│   └── restore-stock.sh
+└── config.env
 ```
 
-## 2. Component Specifications
+## 2. API Specifications
 
-### 2.1 Android Launcher Component (`/launcher`)
-- **Language**: Kotlin, Android SDK 29-34
-- **Configuration** (`config.xml`):
-  - Dock: `com.netflix.ninja`, `com.google.android.youtube.tv`, `in.startv.hotstar`, `com.amazon.amazonvideo.livingroom`
-  - Tuner: `com.smartdevice.livetv`
-  - Reduced Motion: `true` (tailored for MediaTek MT5895/SW4H Mali GPU)
-- **Build Output**: `launcher/app/build/outputs/apk/release/app-release.apk`
+### 2.1 Web Remote Endpoints
 
-### 2.2 iPhone/iPad Web Remote Component (`/remote`)
-- **Backend (`remote/server.py`)**:
-  - Python HTTP server using built-in `http.server` or `asyncio`/FastAPI/Flask.
-  - Endpoints:
-    - `POST /api/key`: Triggers `adb shell input keyevent <keycode>`
-    - `POST /api/text`: Triggers `adb shell input text <escaped_text>`
-    - `POST /api/launch`: Triggers `adb shell monkey -p <package> -c android.intent.category.LAUNCHER 1`
-    - `GET /api/status`: Queries current foreground package and TV power status
-    - `GET /api/screenshot`: Returns real-time screen capture
-  - Serves static assets on `0.0.0.0:8080`.
-- **Frontend (`remote/static/`)**:
-  - High-performance, touch-optimized HTML5/CSS3/Vanilla JS (zero framework overhead).
-  - Apple Web Clip meta tags (`apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`) allowing the user to "Add to Home Screen" on iPhone/iPad to look and feel like a native iOS app.
-  - Haptic feedback via `navigator.vibrate` (where supported).
-  - Virtual touchpad / swipe navigation and dedicated D-pad buttons.
-
-### 2.3 Debloat & Management Component (`/debloat`)
-- Packages isolated into `thomson-debloat.txt`:
-  - Category 1: Spyware & ACR telemetry (e.g. `com.smartdevice.acr.recommendation`)
-  - Category 2: Ad injectors (e.g. `com.smartdevice.recommendation`, `com.google.android.tvrecommendations`)
-  - Category 3: Retail demo players (e.g. `fusion.android.tv.demo`, `com.smartdevice.epopplayer`)
-- Scripts:
-  - `apply-debloat.sh`: Uses `pm disable-user --user 0 <pkg>` with safety backup.
-  - `restore-stock.sh`: Uses `pm enable --user 0 <pkg>` and re-enables stock launcher.
-
-## 3. Data Models & Protocols
-- **ADB Protocol**: Over TCP port 5555 directly to TV IP `192.168.1.8`.
-- **Remote Payload Schema**:
+#### `POST /api/wallpaper`
+- **Content-Type**: `image/jpeg` or `application/octet-stream` (or multipart)
+- **Processing**:
+  - Saved to local `/tmp/tv_wallpaper.jpg`.
+  - Pushed to TV:
+    `adb push /tmp/tv_wallpaper.jpg /sdcard/Android/data/com.gathin.tvhome/files/wallpaper.jpg`
+  - Updates TV config:
+    `echo '{"wallpaper": true, "sky_intensity": 60}' > /tmp/config.json`
+    `adb push /tmp/config.json /sdcard/Android/data/com.gathin.tvhome/files/config.json`
+  - Signals launcher restart:
+    `adb shell am force-stop com.gathin.tvhome && adb shell am start -n com.gathin.tvhome/.MainActivity`
+- **Response**:
   ```json
-  {
-    "action": "keyevent",
-    "keycode": "KEYCODE_DPAD_CENTER"
-  }
-  ```
-  ```json
-  {
-    "action": "launch",
-    "package": "com.netflix.ninja"
-  }
+  { "success": true, "message": "Wallpaper updated successfully" }
   ```
 
-## 4. Verification & Testing Plan
-1. Launcher compilation and install test.
-2. Web Remote test via browser subagent / local curl commands.
-3. Verification of all remote commands (DPAD, Volume, App launch) responding on the live TV.
+#### `POST /api/wallpaper/preset`
+- **Body**:
+  ```json
+  { "preset": "aurora" }
+  ```
+- **Processing**: Pushes selected preset from `remote/wallpapers/<preset>.jpg` to TV.
+
+#### `POST /api/wallpaper/reset`
+- **Processing**: Removes `wallpaper.jpg` from the TV, resets `config.json` to default.
+
+### 2.2 Client-Side Image Resizing (`app.js`)
+To avoid large file uploads and ensure TV performance:
+- An HTML5 `<canvas>` element reads uploaded photo from iOS Camera Roll.
+- Crops & scales image to **1920 × 1080** pixels (16:9).
+- Encodes as JPEG with 0.85 quality (~180KB).
+- Sends optimized Blob directly to `/api/wallpaper`.
+
+### 2.3 Sky Backdrop Configuration (`config.xml` & `config.json`)
+- Key: `"sky_intensity": 60`
+- Launcher class: `SkyView.java` & `Sky.java`
+- Calculates sunrise/sunset angles based on local system time and renders a GPU-accelerated gradient shader behind tiles.
+
+## 3. Verification & Testing
+1. Push preset wallpaper (Aurora) and verify on live TV screen.
+2. Test file upload endpoint with curl and browser subagent.
+3. Validate memory usage on TV using `adb shell dumpsys meminfo com.gathin.tvhome`.
