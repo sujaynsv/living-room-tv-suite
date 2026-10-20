@@ -1,98 +1,105 @@
-# Technical Specification — Smart TV Suite (v2.1)
-## Architecture, Data Models, APIs & Implementation Plan
+# Technical Specification — Smart TV Suite (v3.0)
+## Bedroom Skyworth TV Stick (192.168.0.11:5555) Debloat & Performance Optimization
 
-## 1. System Architecture Diagram
+## 1. Device Context & Hardware Profile
 
+| Property | Value |
+|---|---|
+| **Manufacturer / Brand** | SkyworthDigital / Skyworth |
+| **Model** | TV Stick (`HP47DX2`) |
+| **Android Version** | Android 14 (API 34) |
+| **IP Address & Port** | `192.168.0.11:5555` |
+| **Total RAM** | 983,496 kB (~1 GB) |
+| **Active Available RAM** | ~280 MB (only ~46 MB free!) |
+| **Primary Bottleneck** | Heavy background services (Calendar sync, OEM QA, Telemetry, SetupWizard, Recommendations) consuming >50% of available memory on 1GB hardware. |
+
+## 2. Safety & Whitelist Guarantee
+
+### 2.1 Protected OTT Streaming Apps (Never Touched)
+```text
+com.netflix.ninja                     # Netflix
+com.google.android.youtube.tv         # YouTube
+in.startv.hotstar                     # Disney+ Hotstar
+com.amazon.amazonvideo.livingroom     # Amazon Prime Video
+com.apple.atve.androidtv.appletv      # Apple TV
+ahaflix.tv                            # Aha
+tv.airtel.xstream.tvapp               # Airtel Xstream
+com.spotify.tv.android                # Spotify
+com.formulaone.production             # Formula 1 TV
+com.google.android.youtube.tvmusic    # YouTube Music
+com.graymatrix.did                    # Zee5 / DID
+com.tcl.browser                       # Web Browser
 ```
-+-----------------------------------------------------------------------------------+
-|                         THOMSON ANDROID TV LAUNCHER                               |
-|  - Minimal 4-App Dock: Netflix, YouTube, Hotstar, Prime Video + "Apps" Folder     |
-|  - "Apps" Folder Dialog: Frosted glass modal displaying remaining installed apps  |
-|  - Compact Glass Tiles: 146dp x 82dp with 0x18FFFFFF fill & subtle rim (no black) |
-|  - DockDecoration: Removed opaque 0xFF141416 black band; seamless glass backdrop  |
-|  - Reorder Engine: Long-press enters move mode, DPAD_LEFT/RIGHT swaps dock tiles  |
-|  - On-TV Search Helper: Handles Voice + YouTube Search + Input fallback           |
-+-----------------------------------------------------------------------------------+
-                                         ^
-                                         | Wi-Fi / ADB Bridge
-                                         v
-+-----------------------------------------------------------------------------------+
-|                        REMOTE SERVER DAEMON (server.py)                           |
-|  - POST /api/wallpapers/upload: Accepts multi-photo batches, stores unique IDs    |
-|  - POST /api/ai/ask: Gemini 1.5 Flash (Free Tier) + Zero-Credit Contextual Engine |
-+-----------------------------------------------------------------------------------+
-                                         ^
-                                         | HTTP / JSON (Port 8080)
-+-----------------------------------------------------------------------------------+
-|                            IPHONE / IPAD WEB REMOTE                               |
-|  - Header & Bottom Bar: Prominent Glowing "✨ AI Assistant" (btnOpenAi) Button    |
-|  - Multi-Photo Picker (<input type="file" multiple>): Uploads batch to TV         |
-|  - Web Speech API: Uses phone's microphone to accurately transcribe voice queries |
-|  - Beam to TV: 1-click execution of deep links directly onto TV                   |
-+-----------------------------------------------------------------------------------+
+
+### 2.2 Critical System & Hardware Daemons (Never Touched)
+```text
+com.mft.rcupair                       # Remote Control Bluetooth Pairing
+com.droidlogic                        # Amlogic Hardware Abstraction Layer
+com.droidlogic.tv.settings            # Display & TV Hardware Settings
+com.android.bluetooth                 # Bluetooth Controller
+com.android.systemui                  # System Status Bar & UI
+com.google.android.gms                # Google Play Services (DRM / Widevine L1)
+com.android.vending                   # Google Play Store
+com.google.android.webview            # System Webview
+com.dolby.android.audio.service       # Dolby Atmos / Audio Engine
 ```
 
-## 2. Component Implementation Details
+## 3. Targeted Debloat List
 
-### 2.1 Main 4 Apps + "Apps" Folder Architecture
-- **Dock Size**: Set `COLUMNS = 5` in `MainActivity.java` and `config.xml`:
-  - Slot 0: `com.netflix.ninja` (Netflix)
-  - Slot 1: `com.google.android.youtube.tv` (YouTube)
-  - Slot 2: `in.startv.hotstar` (Hotstar)
-  - Slot 3: `com.amazon.amazonvideo.livingroom` (Prime Video)
-  - Slot 4: `Apps` Folder entry (`Entry.FOLDER`)
-- **Folder Drawer Dialog** (`dialog_all_apps.xml`):
-  - Centered glass dialog containing a `RecyclerView` grid for all other installed applications.
-  - Clicking an app inside the folder launches the app and dismisses the folder.
-  - Back button (`KEYCODE_BACK`) closes the folder dialog and returns focus to the "Apps" tile.
+The following packages will be safely disabled using `pm disable-user --user 0 <package>`:
 
-### 2.2 Long-Press Tile Reordering
-- In `AppAdapter.java`:
-  - On long click: set `reorderMode = true` and `reorderPosition = position`.
-  - In `onTileVerticalKey` or key listener:
-    - If in reorder mode, `KEYCODE_DPAD_LEFT` swaps item at `pos` with `pos - 1`.
-    - `KEYCODE_DPAD_RIGHT` swaps item at `pos` with `pos + 1`.
-    - `KEYCODE_DPAD_CENTER` / `KEYCODE_ENTER` commits the order to `SharedPreferences` (`"dock_order"`) and exits reorder mode.
-  - During reorder mode, the active tile plays a subtle pulse animation or has an accent border with a bottom toast/hint: `"Press ◄ / ► to move • OK to save"`.
+```text
+# ---- SKYWORTH / OEM FACTORY & TELEMETRY ----
+com.skyworth.smallclient              # Skyworth ad & telemetry client
+com.skyworth.superservice             # Skyworth cloud telemetry sync
+com.sdt.producttest                   # Skyworth factory testing app
+com.oem.qa                            # OEM QA test tool
+com.oemservice                        # OEM background telemetry daemon
+com.sdt.customization                 # Skyworth customization daemon
+com.sdt.projector.observer            # Projector daemon (unneeded on TV stick)
+com.sdt.vendor                        # Vendor tracking service
+com.homwee.howtocast                  # Third-party adware / cast guide
+com.mtf.ipcountry                     # IP geolocation tracker
+com.google.android.feedback           # Google bug/crash feedback reporter
+com.android.tv.feedbackconsent        # TV feedback consent uploader
 
-### 2.3 Eliminating Black Backgrounds & Borders
-- **`DockDecoration.java`**:
-  - Remove `band.setColor(0xFF141416)`.
-  - Replace with soft translucent glow or remove `c.drawRoundRect(rect, radius, radius, band)` so no black band is drawn behind the dock.
-- **`tile_bg.xml`**:
-  - Replace `<solid android:color="#FF1C1C1E" />` with `<solid android:color="#1AFFFFFF" />` and `<stroke android:width="1dp" android:color="#20FFFFFF" />`.
-  - App cards now seamlessly match the glassmorphic style of the top bar buttons.
-- **Tile Dimensions**:
-  - `DESIGN_W_DP`: change from `180f` to `146f`.
-  - `DESIGN_H_DP`: change from `101f` to `82f`.
+# ---- HEAVY UNNEEDED BACKGROUND SERVICES (1GB RAM OPTIMIZATION) ----
+com.google.android.play.games         # Play Games background service
+com.google.android.syncadapters.calendar # Calendar sync (eats 78 MB RAM)
+com.android.providers.calendar        # Calendar provider (eats 49 MB RAM)
+com.android.printspooler              # Print spooler daemon
+com.android.healthconnect.controller  # Health Connect
+com.android.health.connect.backuprestore # Health Connect backup
+com.android.devicelockcontroller      # Device lock background daemon
+com.android.adservices.api            # Android 14 Privacy Sandbox ad daemon
+com.android.ondevicepersonalization.services # On-device ad personalization
+com.android.federatedcompute.services # Federated analytics daemon
+com.google.android.tvrecommendations  # Launcher ad recommendation row generator (63 MB RAM)
+com.google.android.tungsten.setupwraith # Initial setup wizard lingering in RAM (55 MB RAM)
+```
 
-### 2.4 Web Remote: Missing AI Assistant Button & Multi-Photo Upload
-- **`remote/static/index.html`**:
-  - Add `<button class="icon-btn ai-btn" id="btnOpenAi" title="AI Voice Assistant">✨</button>` to `.header-actions` right before Power.
-  - Add a dedicated AI voice button in the bottom floating toolbar.
-- **`remote/static/app.js`**:
-  - Change `<input type="file" id="photoInput" accept="image/*">` to include `multiple`.
-  - On file selection, iterate over all selected files, resize each to 1080p, and `POST` to `/api/wallpapers/upload`.
-  - Send toast: `"Uploaded X photos to TV Slideshow!"`.
+## 4. System Performance & Snappiness Commands
 
-### 2.5 TV Voice Assistant & Search Fallback
-- On Thomson Android TV 10, voice input over ADB/Katniss times out if the physical remote has no Bluetooth microphone paired.
-- When `btnAssistant` is pressed:
-  - If Katniss voice fails, provide a quick on-TV search chooser:
-    1. **Voice Search (Katniss)**
-    2. **Search YouTube (Opens YouTube Search with on-screen keyboard)**
-    3. **Search Play Movies / Google TV**
-  - This guarantees the user can always find their desired movie/show immediately.
+1. **Animation Speedup**:
+   - `settings put global window_animation_scale 0.5`
+   - `settings put global transition_animation_scale 0.5`
+   - `settings put global animator_duration_scale 0.5`
+2. **Buffer Flush**:
+   - `logcat -b all -c`
 
-### 2.6 LLM Architecture & Credit Model
-- **Gemini API**: Generous free tier (up to 15 Requests Per Minute for `gemini-1.5-flash`), zero payment/billing needed.
-- **Built-in Contextual Matcher**: Runs 100% locally and free on Python daemon when no API key is supplied, translating family requests into exact TV search intents.
+## 5. Automation Scripts & Reversibility
 
-## 3. Implementation Steps
-1. Update `tile_bg.xml` and `DockDecoration.java` to remove black backgrounds and borders.
-2. Update `AppAdapter.java` and `MainActivity.java` with 5-item dock (4 main apps + "Apps" folder card).
-3. Create `dialog_all_apps.xml` and implement all-apps folder popup.
-4. Implement long-press D-pad reordering logic and SharedPreferences persistence.
-5. Add `btnOpenAi` to `remote/static/index.html` and style with pulsing gradient.
-6. Enable multi-photo upload to `/api/wallpapers/upload` in `remote/static/app.js`.
-7. Compile and install APK via ADB, restart remote server daemon, and verify live on TV.
+### 5.1 Apply Script (`debloat/apply-bedroom-tv.sh`)
+Iterates over the list, running:
+`adb -s 192.168.0.11:5555 shell pm disable-user --user 0 <package>`
+Verifies each package is disabled, clears caches, and applies animation scale settings.
+
+### 5.2 Restore Script (`debloat/restore-bedroom-tv.sh`)
+Iterates over the list, running:
+`adb -s 192.168.0.11:5555 shell pm enable <package>`
+Restores animation scales to `1.0`.
+
+## 6. Verification Plan
+1. Check `dumpsys meminfo` and `cat /proc/meminfo` before and after to measure recovered RAM.
+2. Verify all 12 OTT apps launch and run smoothly without crashes.
+3. Test remote D-pad responsiveness and app switching latency.
