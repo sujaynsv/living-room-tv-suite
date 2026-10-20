@@ -10,6 +10,12 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import java.io.File;
+import java.io.FileWriter;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -103,6 +109,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean animations;
     private boolean advancedEffects;
     private TextView greeting;
+    private TextView btnProfile;
+    public static final String[] PROFILES = {"Sujay", "Devendra Babu", "Sirisha"};
+    private int currentProfileIndex = 0;
+    private long profileSessionStart = 0;
     private View btnInputs;
     private TextView btnWifi;
     private TextView shamsiDate;
@@ -198,6 +208,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private final Runnable minuteTick = new Runnable() {
         @Override
         public void run() {
+            recordWatchTime();
             updateGreeting();
             updateWifiLabel();
             sky.update();
@@ -351,8 +362,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
 
+        btnProfile = findViewById(R.id.btnProfile);
         btnInputs = findViewById(R.id.btnInputs);
         View btnSettings = findViewById(R.id.btnSettings);
+
+        SharedPreferences profilePrefs = getSharedPreferences("tv_profiles", Context.MODE_PRIVATE);
+        currentProfileIndex = profilePrefs.getInt("active_profile_index", 0);
+        if (currentProfileIndex >= PROFILES.length) currentProfileIndex = 0;
+        if (btnProfile != null) {
+            btnProfile.setText(PROFILES[currentProfileIndex]);
+            btnProfile.setOnClickListener(v -> showProfileDialog());
+        }
+
         btnInputs.setOnClickListener(v -> showInputs());
         btnWifi.setOnClickListener(v -> openNetworkPill());
         btnWifi.setOnLongClickListener(v -> {
@@ -376,20 +397,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 focusTile(lastFocused % COLUMNS);
                 return true;
             }
-            int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : R.id.btnWifi;
+            int firstButton = btnProfile != null ? R.id.btnProfile : (btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : R.id.btnWifi);
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
             return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
         };
+        if (btnProfile != null) btnProfile.setOnKeyListener(pillKeys);
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
         if (advancedEffects) {
-            for (View button : new View[]{btnInputs, btnWifi, btnSettings}) {
-                button.setOnFocusChangeListener((view, focused) -> view.animate()
-                        .scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f)
-                        .setDuration(160).start());
+            for (View button : new View[]{btnProfile, btnInputs, btnWifi, btnSettings}) {
+                if (button != null) {
+                    button.setOnFocusChangeListener((view, focused) -> view.animate()
+                            .scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f)
+                            .setDuration(160).start());
+                }
             }
         }
         if (festive) applyFestiveSkin((TextView) btnInputs, (TextView) btnSettings);
@@ -470,6 +494,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && intent.hasExtra("profile")) {
+            String target = intent.getStringExtra("profile");
+            for (int i = 0; i < PROFILES.length; i++) {
+                if (PROFILES[i].equalsIgnoreCase(target)) {
+                    switchProfile(i);
+                    break;
+                }
+            }
+        }
         if (openLauncherSettingsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
         grid.scrollToPosition(0);
@@ -502,6 +535,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             reloadApps(true);
         }
         rebuildOnResume = false;
+        profileSessionStart = System.currentTimeMillis();
+        writeProfileStats();
         updateGreeting();
         updateWifiLabel();
         updateInputsButton();
@@ -588,6 +623,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        recordWatchTime();
         stopAmbientAnimation();
         heroName.animate().cancel();
         ambient.animate().cancel();
@@ -898,22 +934,158 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void updateGreeting() {
         int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        int res;
-        if (hour < 5) res = R.string.good_night;
-        else if (hour < 12) res = R.string.good_morning;
-        else if (hour < 17) res = R.string.good_afternoon;
-        else if (hour < 22) res = R.string.good_evening;
-        else res = R.string.good_night;
+        String timeGreeting;
+        if (hour < 5) timeGreeting = "Good night";
+        else if (hour < 12) timeGreeting = "Good morning";
+        else if (hour < 17) timeGreeting = "Good afternoon";
+        else if (hour < 22) timeGreeting = "Good evening";
+        else timeGreeting = "Good night";
+
         String festiveGreeting = festive ? festival.greetingText() : "";
         if (!festiveGreeting.isEmpty()) {
             greeting.setText(festiveGreeting);
             greeting.setTextColor(liftTowardsWhite(festival.accentColor(), 0.25f));
         } else {
-            greeting.setText(res);
+            String name = PROFILES[currentProfileIndex];
+            greeting.setText(timeGreeting + ", " + name);
             greeting.setTextColor(greetingColor);
         }
         if (shamsi) shamsiDate.setText(Shamsi.today());
     }
+
+    private void recordWatchTime() {
+        if (profileSessionStart <= 0) return;
+        long elapsed = System.currentTimeMillis() - profileSessionStart;
+        profileSessionStart = System.currentTimeMillis();
+        if (elapsed > 0 && elapsed < 24 * 3600 * 1000) {
+            String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+            SharedPreferences prefs = getSharedPreferences("tv_profiles", Context.MODE_PRIVATE);
+            String key = "watch_" + PROFILES[currentProfileIndex] + "_" + today;
+            long total = prefs.getLong(key, 0) + elapsed;
+            prefs.edit().putLong(key, total).apply();
+            writeProfileStats();
+        }
+    }
+
+    private String getWatchTimeFormatted(String profile) {
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        SharedPreferences prefs = getSharedPreferences("tv_profiles", Context.MODE_PRIVATE);
+        String key = "watch_" + profile + "_" + today;
+        long ms = prefs.getLong(key, 0);
+        if (profile.equals(PROFILES[currentProfileIndex]) && profileSessionStart > 0) {
+            ms += (System.currentTimeMillis() - profileSessionStart);
+        }
+        long minutes = (ms / 1000) / 60;
+        long hours = minutes / 60;
+        long remMinutes = minutes % 60;
+        if (hours > 0) {
+            return hours + "h " + remMinutes + "m";
+        } else {
+            return minutes + "m";
+        }
+    }
+
+    private void writeProfileStats() {
+        try {
+            File dir = getExternalFilesDir(null);
+            if (dir == null) return;
+            File file = new File(dir, "profile_stats.json");
+            StringBuilder json = new StringBuilder();
+            json.append("{\n");
+            json.append("  \"active_profile\": \"").append(PROFILES[currentProfileIndex]).append("\",\n");
+            json.append("  \"profiles\": [\n");
+            for (int i = 0; i < PROFILES.length; i++) {
+                String p = PROFILES[i];
+                json.append("    {\"name\": \"").append(p).append("\", \"watch_time\": \"")
+                    .append(getWatchTimeFormatted(p)).append("\"}");
+                if (i < PROFILES.length - 1) json.append(",");
+                json.append("\n");
+            }
+            json.append("  ]\n}");
+            FileWriter fw = new FileWriter(file);
+            fw.write(json.toString());
+            fw.close();
+        } catch (Exception ignored) {}
+    }
+
+    private void showProfileDialog() {
+        View anchor = findViewById(R.id.btnProfile);
+        if (anchor == null) return;
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+
+        int width = Math.max(anchor.getWidth(), (int) (220 * density));
+        final PopupWindow popup = glassPopup(panel, width);
+
+        for (int i = 0; i < PROFILES.length; i++) {
+            final int idx = i;
+            String name = PROFILES[i];
+            String watchTime = getWatchTimeFormatted(name);
+            View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+            ImageView icon = row.findViewById(R.id.icon);
+            icon.setImageResource(R.drawable.ic_profile);
+            icon.setVisibility(View.VISIBLE);
+
+            View dot = row.findViewById(R.id.dot);
+            dot.setVisibility(idx == currentProfileIndex ? View.VISIBLE : View.GONE);
+
+            TextView status = row.findViewById(R.id.status);
+            status.setText(watchTime);
+            status.setVisibility(View.VISIBLE);
+
+            TextView title = row.findViewById(R.id.title);
+            title.setText(name);
+
+            row.setOnClickListener(v -> {
+                popup.dismiss();
+                switchProfile(idx);
+            });
+
+            final boolean[] pressed = {false};
+            row.setOnKeyListener((v, code, event) -> {
+                if (code != KeyEvent.KEYCODE_DPAD_CENTER && code != KeyEvent.KEYCODE_ENTER) return false;
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    if (event.getRepeatCount() == 0) pressed[0] = true;
+                    return true;
+                }
+                boolean activate = pressed[0];
+                pressed[0] = false;
+                if (activate) {
+                    popup.dismiss();
+                    switchProfile(idx);
+                }
+                return true;
+            });
+            rows.addView(row);
+        }
+
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max(width, panel.getMeasuredWidth()));
+        dropIn(popup, panel, anchor, Gravity.START);
+        if (rows.getChildCount() > currentProfileIndex) {
+            rows.getChildAt(currentProfileIndex).requestFocus();
+        } else if (rows.getChildCount() > 0) {
+            rows.getChildAt(0).requestFocus();
+        }
+    }
+
+    public void switchProfile(int idx) {
+        if (idx < 0 || idx >= PROFILES.length) return;
+        recordWatchTime();
+        currentProfileIndex = idx;
+        profileSessionStart = System.currentTimeMillis();
+        getSharedPreferences("tv_profiles", Context.MODE_PRIVATE)
+                .edit()
+                .putInt("active_profile_index", currentProfileIndex)
+                .apply();
+        if (btnProfile != null) {
+            btnProfile.setText(PROFILES[currentProfileIndex]);
+        }
+        updateGreeting();
+        writeProfileStats();
+        Toast.makeText(this, "Profile: " + PROFILES[currentProfileIndex], Toast.LENGTH_SHORT).show();
+    }
+
 
     /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */
     private void updateWifiLabel() {

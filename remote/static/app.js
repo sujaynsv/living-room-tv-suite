@@ -1,10 +1,17 @@
-// Smart TV Web Remote Controller
+// Smart TV Web Remote Controller — Family Edition
 const API_BASE = '';
 
 function triggerHaptic() {
   if (navigator.vibrate) {
     navigator.vibrate(25);
   }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 async function sendKey(key) {
@@ -15,8 +22,7 @@ async function sendKey(key) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key })
     });
-    const data = await res.json();
-    return data;
+    return await res.json();
   } catch (err) {
     console.error('Key error:', err);
   }
@@ -53,6 +59,48 @@ async function sendText(text) {
   }
 }
 
+// Profile management
+async function switchProfile(name) {
+  triggerHaptic();
+  try {
+    const res = await fetch(`${API_BASE}/api/profile/set`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: name })
+    });
+    const data = await res.json();
+    showToast(`Switched profile to ${name}`);
+    updateProfiles();
+    return data;
+  } catch (err) {
+    console.error('Profile switch error:', err);
+  }
+}
+
+async function updateProfiles() {
+  try {
+    const res = await fetch(`${API_BASE}/api/profiles`);
+    const data = await res.json();
+    const active = data.active_profile || 'Sujay';
+
+    document.querySelectorAll('.profile-chip').forEach(chip => {
+      const p = chip.getAttribute('data-profile');
+      if (p === active) chip.classList.add('active');
+      else chip.classList.remove('active');
+    });
+
+    if (data.profiles) {
+      data.profiles.forEach(p => {
+        const id = 'time-' + p.name.replace(/\s+/g, '');
+        const el = document.getElementById(id);
+        if (el) el.textContent = p.watch_time;
+      });
+    }
+  } catch (e) {
+    console.warn('Profile poll error', e);
+  }
+}
+
 async function updateStatus() {
   try {
     const res = await fetch(`${API_BASE}/api/status`);
@@ -67,6 +115,95 @@ async function updateStatus() {
     console.warn('Status poll error', e);
   }
 }
+
+// Wallpaper upload from Photos
+const photoInput = document.getElementById('photoInput');
+document.getElementById('btnUploadWp').addEventListener('click', () => {
+  photoInput.click();
+});
+
+photoInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  showToast('Optimizing and uploading...');
+  triggerHaptic();
+
+  // Resize using Canvas to 1920x1080 (16:9)
+  const img = new Image();
+  const reader = new FileReader();
+
+  reader.onload = (evt) => {
+    img.onload = async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920;
+      canvas.height = 1080;
+      const ctx = canvas.getContext('2d');
+
+      // Center crop to 16:9
+      const imgAspect = img.width / img.height;
+      const targetAspect = 1920 / 1080;
+      let drawW, drawH, drawX, drawY;
+
+      if (imgAspect > targetAspect) {
+        drawH = 1080;
+        drawW = 1080 * imgAspect;
+        drawX = (1920 - drawW) / 2;
+        drawY = 0;
+      } else {
+        drawW = 1920;
+        drawH = 1920 / imgAspect;
+        drawX = 0;
+        drawY = (1080 - drawH) / 2;
+      }
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, 1920, 1080);
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+      canvas.toBlob(async (blob) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/wallpaper`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'image/jpeg' },
+            body: blob
+          });
+          const result = await res.json();
+          if (result.success) {
+            showToast('🎉 Wallpaper live on TV!');
+          } else {
+            showToast('Upload failed: ' + result.error);
+          }
+        } catch (err) {
+          showToast('Error uploading wallpaper');
+          console.error(err);
+        }
+      }, 'image/jpeg', 0.88);
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+// Reset Wallpaper
+document.getElementById('btnResetWp').addEventListener('click', async () => {
+  triggerHaptic();
+  try {
+    const res = await fetch(`${API_BASE}/api/wallpaper/reset`, { method: 'POST' });
+    const result = await res.json();
+    showToast('Wallpaper reset to dark theme');
+  } catch (err) {
+    console.error(err);
+  }
+});
+
+// Bind Profile Chips
+document.querySelectorAll('.profile-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const profile = chip.getAttribute('data-profile');
+    switchProfile(profile);
+  });
+});
 
 // Bind Key Buttons
 document.querySelectorAll('[data-key]').forEach(btn => {
@@ -103,9 +240,7 @@ document.getElementById('btnCancelText').addEventListener('click', () => {
 });
 document.getElementById('btnSendText').addEventListener('click', () => {
   const text = tvTextInput.value.trim();
-  if (text) {
-    sendText(text);
-  }
+  if (text) sendText(text);
   keyboardModal.classList.remove('active');
 });
 tvTextInput.addEventListener('keydown', (e) => {
@@ -130,7 +265,7 @@ document.getElementById('btnRefreshScreen').addEventListener('click', () => {
   liveScreenImg.src = `${API_BASE}/api/screenshot?t=${Date.now()}`;
 });
 
-// Keyboard arrow key support on desktop/laptop
+// Desktop Keyboard Arrow Keys
 window.addEventListener('keydown', (e) => {
   if (keyboardModal.classList.contains('active')) return;
   if (e.key === 'ArrowUp') sendKey('UP');
@@ -141,6 +276,10 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'Backspace' || e.key === 'Escape') sendKey('BACK');
 });
 
-// Initial status fetch
+// Polling
 updateStatus();
-setInterval(updateStatus, 5000);
+updateProfiles();
+setInterval(() => {
+  updateStatus();
+  updateProfiles();
+}, 4000);
