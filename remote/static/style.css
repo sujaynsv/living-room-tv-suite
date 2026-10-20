@@ -501,3 +501,122 @@ body {
 .toast.show {
   transform: translateX(-50%) translateY(0);
 }
+
+/* AI Voice Assistant Drawer */
+.ai-card {
+  max-width: 420px;
+}
+.ai-subtitle {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.ai-mic-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 20px 0 16px;
+}
+.ai-mic-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7C3AED, #3B82F6);
+  border: none;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(124, 58, 237, 0.45);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.ai-mic-btn:active {
+  transform: scale(0.95);
+}
+.ai-mic-btn.listening {
+  animation: pulseMic 1.4s infinite;
+  background: linear-gradient(135deg, #EF4444, #F59E0B);
+  box-shadow: 0 4px 22px rgba(239, 68, 68, 0.6);
+}
+@keyframes pulseMic {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+.mic-status {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.ai-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ai-input-row input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: white;
+  font-size: 14px;
+  outline: none;
+}
+.ai-quick-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.tag-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 5px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tag-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.ai-result-box {
+  margin-top: 16px;
+  padding: 14px;
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 14px;
+}
+.ai-response-text {
+  font-size: 14px;
+  color: #EDE9FE;
+  line-height: 1.4;
+}
+.ai-response-text strong {
+  display: block;
+  font-size: 12px;
+  color: #A78BFA;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ai-response-text small {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 6px;
+}
+.beam-btn {
+  margin-top: 12px;
+  width: 100%;
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 500;
+}

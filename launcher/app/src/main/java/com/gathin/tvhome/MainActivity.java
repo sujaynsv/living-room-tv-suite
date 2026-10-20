@@ -110,6 +110,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean advancedEffects;
     private TextView greeting;
     private TextView btnProfile;
+    private View btnAssistant;
+    private TextView weatherPill;
+    private static boolean sPromptedThisSession = false;
+    private android.app.Dialog startupCloudDialog;
+    private android.widget.ImageView wallFront;
+    private android.widget.ImageView wallBack;
+    private java.io.File[] slideshowFiles;
+    private int slideshowIndex = 0;
+    private final android.os.Handler slideshowHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     public static final String[] PROFILES = {"Sujay", "Devendra Babu", "Sirisha"};
     private int currentProfileIndex = 0;
     private long profileSessionStart = 0;
@@ -362,9 +371,34 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
 
+        btnAssistant = findViewById(R.id.btnAssistant);
         btnProfile = findViewById(R.id.btnProfile);
         btnInputs = findViewById(R.id.btnInputs);
         View btnSettings = findViewById(R.id.btnSettings);
+
+        if (btnAssistant != null) {
+            btnAssistant.setOnClickListener(v -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_ASSIST);
+                    startActivity(intent);
+                } catch (Exception e) {
+                    try {
+                        Intent voiceIntent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                        voiceIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                        startActivity(voiceIntent);
+                    } catch (Exception ex) {
+                        try {
+                            Intent yt = new Intent(Intent.ACTION_SEARCH);
+                            yt.setPackage("com.google.android.youtube.tv");
+                            startActivity(yt);
+                        } catch (Exception exc) {
+                            Toast.makeText(this, "Assistant unavailable", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                }
+            });
+        }
 
         SharedPreferences profilePrefs = getSharedPreferences("tv_profiles", Context.MODE_PRIVATE);
         currentProfileIndex = profilePrefs.getInt("active_profile_index", 0);
@@ -397,18 +431,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 focusTile(lastFocused % COLUMNS);
                 return true;
             }
-            int firstButton = btnProfile != null ? R.id.btnProfile : (btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : R.id.btnWifi);
+            int firstButton = btnAssistant != null ? R.id.btnAssistant : (btnProfile != null ? R.id.btnProfile : (btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : R.id.btnWifi));
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
             return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
         };
+        if (btnAssistant != null) btnAssistant.setOnKeyListener(pillKeys);
         if (btnProfile != null) btnProfile.setOnKeyListener(pillKeys);
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
         if (advancedEffects) {
-            for (View button : new View[]{btnProfile, btnInputs, btnWifi, btnSettings}) {
+            for (View button : new View[]{btnAssistant, btnProfile, btnInputs, btnWifi, btnSettings}) {
                 if (button != null) {
                     button.setOnFocusChangeListener((view, focused) -> view.animate()
                             .scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f)
@@ -455,17 +490,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * costs a screen-sized bitmap (about 4 MB at 1080p), which is the price of a wallpaper on a 1 GB TV.
      * A picture over 4K is refused rather than decoded (#166); the plain colour stays.
      */
-    private void showWallpaper(File file) {
+    private android.graphics.Bitmap decodeWallpaperBitmap(File file, android.util.DisplayMetrics dm) {
         try {
-            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
             android.graphics.BitmapFactory.Options opts = new android.graphics.BitmapFactory.Options();
             opts.inJustDecodeBounds = true;
             android.graphics.BitmapFactory.decodeFile(file.getPath(), opts);
             int w = opts.outWidth, h = opts.outHeight;
-            if (w <= 0 || h <= 0) return;
+            if (w <= 0 || h <= 0) return null;
             int sample = WallpaperSize.sampleSize(w, h, dm.widthPixels, dm.heightPixels);
-            // The limit applies to what is decoded, so a 12 MP photo still works once it is sampled down.
-            if (!WallpaperSize.accepted(w / sample, h / sample)) return;
+            if (!WallpaperSize.accepted(w / sample, h / sample)) return null;
             opts.inJustDecodeBounds = false;
             opts.inSampleSize = sample;
             int[] scale = WallpaperSize.coverScale(w / sample, h / sample, dm.widthPixels, dm.heightPixels);
@@ -474,16 +507,154 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 opts.inDensity = scale[0];
                 opts.inTargetDensity = scale[1];
             }
-            opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;   // no alpha needed, half the memory
-            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(file.getPath(), opts);
+            opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;
+            return android.graphics.BitmapFactory.decodeFile(file.getPath(), opts);
+        } catch (Exception | OutOfMemoryError e) {
+            return null;
+        }
+    }
+
+    private void showWallpaper(File file) {
+        try {
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            android.graphics.Bitmap bmp = decodeWallpaperBitmap(file, dm);
             if (bmp == null) return;
-            android.widget.ImageView wall = new android.widget.ImageView(this);
-            wall.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-            wall.setImageBitmap(bmp);
-            root.addView(wall, 0, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            wallFront = new android.widget.ImageView(this);
+            wallFront.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            wallFront.setImageBitmap(bmp);
+
+            wallBack = new android.widget.ImageView(this);
+            wallBack.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+
+            root.addView(wallBack, 0, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            root.addView(wallFront, 1, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+            File dir = new File(file.getParentFile(), "wallpapers");
+            if (dir.exists() && dir.isDirectory()) {
+                File[] list = dir.listFiles((d, name) -> {
+                    String n = name.toLowerCase();
+                    return n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp");
+                });
+                if (list != null && list.length > 1) {
+                    slideshowFiles = list;
+                    slideshowIndex = 0;
+                    startSlideshow();
+                }
+            }
         } catch (Exception | OutOfMemoryError e) {
             // A bad or huge picture must never take the home screen down; the plain colour stays.
         }
+    }
+
+    private void startSlideshow() {
+        slideshowHandler.removeCallbacks(slideshowRunnable);
+        if (slideshowFiles != null && slideshowFiles.length > 1) {
+            slideshowHandler.postDelayed(slideshowRunnable, 35000);
+        }
+    }
+
+    private void stopSlideshow() {
+        slideshowHandler.removeCallbacks(slideshowRunnable);
+    }
+
+    private final Runnable slideshowRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (slideshowFiles == null || slideshowFiles.length <= 1 || wallFront == null || wallBack == null) return;
+            slideshowIndex = (slideshowIndex + 1) % slideshowFiles.length;
+            File nextFile = slideshowFiles[slideshowIndex];
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            android.graphics.Bitmap nextBmp = decodeWallpaperBitmap(nextFile, dm);
+            if (nextBmp != null) {
+                wallBack.setImageBitmap(nextBmp);
+                wallFront.animate().alpha(0f).setDuration(1200).withEndAction(() -> {
+                    wallFront.setImageBitmap(nextBmp);
+                    wallFront.setAlpha(1f);
+                    slideshowHandler.postDelayed(slideshowRunnable, 35000);
+                }).start();
+            } else {
+                slideshowHandler.postDelayed(slideshowRunnable, 35000);
+            }
+        }
+    };
+
+    private void showStartupProfileCloud() {
+        try {
+            if (isFinishing() || isDestroyed()) return;
+            if (startupCloudDialog != null && startupCloudDialog.isShowing()) return;
+            startupCloudDialog = new android.app.Dialog(this);
+            startupCloudDialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+            startupCloudDialog.setContentView(R.layout.dialog_who_watching);
+            if (startupCloudDialog.getWindow() != null) {
+                startupCloudDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            }
+            View cardSujay = startupCloudDialog.findViewById(R.id.cardSujay);
+            View cardDevendra = startupCloudDialog.findViewById(R.id.cardDevendra);
+            View cardSirisha = startupCloudDialog.findViewById(R.id.cardSirisha);
+
+            if (cardSujay != null) {
+                cardSujay.setOnClickListener(v -> {
+                    switchProfile(0);
+                    startupCloudDialog.dismiss();
+                });
+            }
+            if (cardDevendra != null) {
+                cardDevendra.setOnClickListener(v -> {
+                    switchProfile(1);
+                    startupCloudDialog.dismiss();
+                });
+            }
+            if (cardSirisha != null) {
+                cardSirisha.setOnClickListener(v -> {
+                    switchProfile(2);
+                    startupCloudDialog.dismiss();
+                });
+            }
+
+            if (currentProfileIndex == 0 && cardSujay != null) cardSujay.requestFocus();
+            else if (currentProfileIndex == 1 && cardDevendra != null) cardDevendra.requestFocus();
+            else if (currentProfileIndex == 2 && cardSirisha != null) cardSirisha.requestFocus();
+
+            startupCloudDialog.show();
+        } catch (Exception ignored) {}
+    }
+
+    private void updateWeather() {
+        weatherPill = findViewById(R.id.weatherPill);
+        if (weatherPill == null) return;
+        new Thread(() -> {
+            try {
+                java.net.URL url = new java.net.URL("https://api.open-meteo.com/v1/forecast?latitude=12.9716&longitude=77.5946&current_weather=true");
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+                org.json.JSONObject obj = new org.json.JSONObject(sb.toString());
+                if (obj.has("current_weather")) {
+                    org.json.JSONObject cw = obj.getJSONObject("current_weather");
+                    double temp = cw.optDouble("temperature", 28.0);
+                    int code = cw.optInt("weathercode", 0);
+                    String icon = "☀️";
+                    String desc = "Clear";
+                    if (code == 1 || code == 2) { icon = "🌤️"; desc = "Partly Cloudy"; }
+                    else if (code == 3) { icon = "☁️"; desc = "Overcast"; }
+                    else if (code >= 51 && code <= 67) { icon = "🌧️"; desc = "Rainy"; }
+                    else if (code >= 80 && code <= 82) { icon = "🌦️"; desc = "Showers"; }
+                    else if (code >= 95) { icon = "⛈️"; desc = "Thunderstorm"; }
+                    final String text = icon + " " + Math.round(temp) + "°C • " + desc;
+                    runOnUiThread(() -> {
+                        if (weatherPill != null) {
+                            weatherPill.setText(text);
+                            weatherPill.setVisibility(View.VISIBLE);
+                        }
+                    });
+                }
+            } catch (Exception ignored) {}
+        }).start();
     }
 
     /**
@@ -502,6 +673,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     break;
                 }
             }
+        }
+        if (intent != null && intent.hasExtra("show_cloud")) {
+            showStartupProfileCloud();
         }
         if (openLauncherSettingsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
@@ -538,6 +712,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         profileSessionStart = System.currentTimeMillis();
         writeProfileStats();
         updateGreeting();
+        updateWeather();
+        startSlideshow();
+        if (!sPromptedThisSession) {
+            sPromptedThisSession = true;
+            root.postDelayed(this::showStartupProfileCloud, 600);
+        }
         updateWifiLabel();
         updateInputsButton();
         sky.update();
@@ -624,6 +804,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         recordWatchTime();
+        stopSlideshow();
+        if (startupCloudDialog != null && startupCloudDialog.isShowing()) startupCloudDialog.dismiss();
         stopAmbientAnimation();
         heroName.animate().cancel();
         ambient.animate().cancel();
@@ -1125,8 +1307,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 String ssid = info != null ? info.getSSID() : null;
                 flame = info != null ? Math.max(1, Math.min(4, WifiManager.calculateSignalLevel(info.getRssi(), 5))) : 3;
                 if (ssid != null) {
-                    ssid = ssid.replace("\"", "").trim();
-                    if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) text = ssid;
+                    text = "Wi-Fi";
                 }
             }
         } catch (Exception ignored) {
@@ -1148,7 +1329,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             label.setSpan(span, text.length() + 1, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             btnWifi.setText(label);
         } else {
-            btnWifi.setText(text);
+            btnWifi.setText("");
         }
         if (festive && diya != null) {
             if (online && flame == 0) flame = 3;   // online some other way (cellular, USB tethering)

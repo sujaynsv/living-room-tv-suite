@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="720dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/glass_panel"
+    android:paddingStart="36dp"
+    android:paddingEnd="36dp"
+    android:paddingTop="32dp"
+    android:paddingBottom="32dp"
+    android:elevation="16dp">
+
+    <TextView
+        android:id="@+id/cloudTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Hi, who's watching TV?"
+        android:textColor="#FFFFFFFF"
+        android:textSize="26sp"
+        android:fontFamily="@font/outfit_light"
+        android:letterSpacing="-0.02" />
+
+    <TextView
+        android:id="@+id/cloudSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Select your profile for personalized greetings and time tracking"
+        android:textColor="#B3FFFFFF"
+        android:textSize="14sp"
+        android:fontFamily="@font/outfit_light" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="26dp"
+        android:orientation="horizontal">
+
+        <!-- Card Sujay -->
+        <LinearLayout
+            android:id="@+id/cardSujay"
+            android:layout_width="0dp"
+            android:nextFocusLeft="@+id/cardSujay"
+            android:nextFocusRight="@+id/cardDevendra"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/profile_card_bg"
+            android:focusable="true"
+            android:clickable="true"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingTop="22dp"
+            android:paddingBottom="22dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <TextView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:gravity="center"
+                android:text="S"
+                android:textSize="22sp"
+                android:duplicateParentState="true"
+                android:textColor="@drawable/pill_text"
+                android:fontFamily="@font/outfit_medium"
+                android:background="@drawable/avatar_circle_bg" />
+
+            <TextView
+                android:id="@+id/txtNameSujay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Sujay"
+                android:duplicateParentState="true"
+                android:textColor="@drawable/pill_text"
+                android:textSize="17sp"
+                android:fontFamily="@font/outfit_medium" />
+        </LinearLayout>
+
+        <!-- Card Devendra Babu -->
+        <LinearLayout
+            android:id="@+id/cardDevendra"
+            android:layout_width="0dp"
+            android:nextFocusLeft="@+id/cardSujay"
+            android:nextFocusRight="@+id/cardSirisha"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/profile_card_bg"
+            android:focusable="true"
+            android:clickable="true"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingTop="22dp"
+            android:paddingBottom="22dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <TextView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:gravity="center"
+                android:text="D"
+                android:textSize="22sp"
+                android:duplicateParentState="true"
+                android:textColor="@drawable/pill_text"
+                android:fontFamily="@font/outfit_medium"
+                android:background="@drawable/avatar_circle_bg" />
+
+            <TextView
+                android:id="@+id/txtNameDevendra"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:text="Devendra Babu"
+                android:duplicateParentState="true"
+                android:textColor="@drawable/pill_text"
+                android:textSize="17sp"
+                android:fontFamily="@font/outfit_medium" />
+        </LinearLayout>
+
+        <!-- Card Sirisha -->
+        <LinearLayout
+            android:id="@+id/cardSirisha"
+            android:layout_width="0dp"
+            android:nextFocusLeft="@+id/cardDevendra"
+            android:nextFocusRight="@+id/cardSirisha"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/profile_card_bg"
+            android:focusable="true"
+            android:clickable="true"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingTop="22dp"
+            android:paddingBottom="22dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <TextView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:gravity="center"
+                android:text="S"
+                android:textSize="22sp"
+                android:duplicateParentState="true"
+                android:textColor="@drawable/pill_text"
+                android:fontFamily="@font/outfit_medium"
+                android:background="@drawable/avatar_circle_bg" />
+
+            <TextView
+                android:id="@+id/txtNameSirisha"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Sirisha"
+                android:duplicateParentState="true"
+                android:textColor="@drawable/pill_text"
+                android:textSize="17sp"
+                android:fontFamily="@font/outfit_medium" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

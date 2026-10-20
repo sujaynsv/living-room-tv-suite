@@ -196,6 +196,89 @@ class RemoteRequestHandler(http.server.SimpleHTTPRequestHandler):
             ok, out = run_adb(["shell", "input", "text", formatted_text])
             self.send_json({"success": ok, "text": text})
 
+        elif parsed.path == "/api/ai/ask":
+            query = body.get("query", "").strip()
+            profile = body.get("profile", "Sujay")
+            api_key = os.environ.get("GEMINI_API_KEY", "")
+            
+            reply = ""
+            search_query = query
+            intent_url = f"vnd.youtube://results?q={urllib.parse.quote(query)}"
+            
+            if api_key:
+                try:
+                    req_data = json.dumps({
+                        "contents": [{
+                            "parts": [{"text": f"You are a smart TV assistant for {profile}. The user asked: '{query}'. Provide a 1-sentence friendly suggestion and a 3-5 word exact search term for YouTube or OTT. Format: Suggestion | Search Term"}]
+                        }]
+                    }).encode("utf-8")
+                    req = urllib.request.Request(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+                        data=req_data,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        res_json = json.loads(resp.read().decode("utf-8"))
+                        text_resp = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        if "|" in text_resp:
+                            reply, search_query = [s.strip() for s in text_resp.split("|", 1)]
+                        else:
+                            reply = text_resp
+                            search_query = query
+                        intent_url = f"vnd.youtube://results?q={urllib.parse.quote(search_query)}"
+                except Exception as e:
+                    reply = f"Here are the best matches for '{query}'"
+            else:
+                # Built-in contextual smart matcher
+                q_lower = query.lower()
+                if "comedy" in q_lower or "funny" in q_lower:
+                    reply = f"Here are top rated comedy specials & scenes for {profile}:"
+                    search_query = f"{profile} favorite family comedy scenes" if "family" in q_lower else f"{query} popular"
+                elif "music" in q_lower or "song" in q_lower:
+                    reply = f"Playing relaxing music selection for {profile}:"
+                    search_query = f"relaxing soothing music {query}"
+                elif "news" in q_lower:
+                    reply = "Tuning into live news updates:"
+                    search_query = "live news stream english telugu"
+                else:
+                    reply = f"Found recommendations for '{query}':"
+                    search_query = query
+                intent_url = f"vnd.youtube://results?q={urllib.parse.quote(search_query)}"
+
+            self.send_json({
+                "success": True,
+                "reply": reply,
+                "search_query": search_query,
+                "intent_url": intent_url,
+                "profile": profile
+            })
+
+        elif parsed.path == "/api/beam":
+            intent_url = body.get("intent_url", "")
+            if not intent_url:
+                self.send_json({"error": "Missing intent_url"}, status=400)
+                return
+            ok, out = run_adb(["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", intent_url])
+            self.send_json({"success": ok, "intent_url": intent_url})
+
+        elif parsed.path == "/api/wallpapers/upload":
+            image_bytes = self.rfile.read(content_len) if content_len > 0 else b""
+            if not image_bytes:
+                self.send_json({"error": "No image data"}, status=400)
+                return
+            wp_id = uuid.uuid4().hex[:8]
+            local_tmp = f"/tmp/wp_{wp_id}.jpg"
+            with open(local_tmp, "wb") as f:
+                f.write(image_bytes)
+            run_adb(["shell", "mkdir", "-p", f"{TV_FILES_DIR}/wallpapers"])
+            run_adb(["push", local_tmp, f"{TV_FILES_DIR}/wallpapers/wp_{wp_id}.jpg"])
+            # Also ensure config.json has wallpaper: true
+            cfg_path = "/tmp/theme_config.json"
+            with open(cfg_path, "w") as f:
+                json.dump({"wallpaper": True, "sky_intensity": 60}, f)
+            run_adb(["push", cfg_path, f"{TV_FILES_DIR}/config.json"])
+            self.send_json({"success": True, "message": "Added to TV slideshow gallery!"})
+
         else:
             self.send_json({"error": "Endpoint not found"}, status=404)
 

@@ -283,3 +283,160 @@ setInterval(() => {
   updateStatus();
   updateProfiles();
 }, 4000);
+
+// Multi-Wallpaper Slideshow Upload
+const multiWallpaperInput = document.getElementById('multiWallpaperInput');
+if (multiWallpaperInput) {
+  multiWallpaperInput.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    showToast(`Optimizing & uploading ${files.length} photos...`);
+    let count = 0;
+    for (const file of files) {
+      const blob = await optimizeImage(file);
+      try {
+        await fetch(`${API_BASE}/api/wallpapers/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/jpeg' },
+          body: blob
+        });
+        count++;
+      } catch (err) {}
+    }
+    showToast(`Added ${count} photos to TV Slideshow!`);
+    multiWallpaperInput.value = '';
+  });
+}
+
+// AI Assistant Voice Drawer & Beam
+const aiModal = document.getElementById('aiModal');
+const btnOpenAi = document.getElementById('btnOpenAi');
+const btnCloseAi = document.getElementById('btnCloseAi');
+const btnMic = document.getElementById('btnMic');
+const micStatus = document.getElementById('micStatus');
+const aiQueryInput = document.getElementById('aiQueryInput');
+const btnAiAsk = document.getElementById('btnAiAsk');
+const aiResultBox = document.getElementById('aiResultBox');
+const aiResponseText = document.getElementById('aiResponseText');
+const btnBeamToTv = document.getElementById('btnBeamToTv');
+
+let currentIntentUrl = '';
+
+if (btnOpenAi) {
+  btnOpenAi.addEventListener('click', () => {
+    aiModal.classList.add('active');
+    aiQueryInput.focus();
+  });
+}
+if (btnCloseAi) {
+  btnCloseAi.addEventListener('click', () => {
+    aiModal.classList.remove('active');
+  });
+}
+
+let recognition = null;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRec();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = 'en-IN';
+
+  recognition.onstart = () => {
+    btnMic.classList.add('listening');
+    micStatus.textContent = 'Listening... Speak now';
+  };
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    aiQueryInput.value = transcript;
+    micStatus.textContent = `Heard: "${transcript}"`;
+    btnMic.classList.remove('listening');
+    executeAiQuery(transcript);
+  };
+  recognition.onerror = () => {
+    btnMic.classList.remove('listening');
+    micStatus.textContent = 'Voice error. Tap mic or type below.';
+  };
+  recognition.onend = () => {
+    btnMic.classList.remove('listening');
+  };
+}
+
+if (btnMic) {
+  btnMic.addEventListener('click', () => {
+    if (!recognition) {
+      alert('Speech recognition not supported in this browser. Please type your query.');
+      return;
+    }
+    try {
+      recognition.start();
+    } catch (e) {
+      recognition.stop();
+    }
+  });
+}
+
+async function executeAiQuery(query) {
+  if (!query) return;
+  micStatus.textContent = 'Thinking...';
+  try {
+    const res = await fetch(`${API_BASE}/api/ai/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: query,
+        profile: activeProfile
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentIntentUrl = data.intent_url;
+      aiResponseText.innerHTML = `<strong>AI Suggestion (${data.profile}):</strong><p>${data.reply}</p><small>Search: "${data.search_query}"</small>`;
+      aiResultBox.style.display = 'block';
+      micStatus.textContent = 'Recommendation ready!';
+    }
+  } catch (err) {
+    micStatus.textContent = 'Could not get AI recommendation.';
+  }
+}
+
+if (btnAiAsk) {
+  btnAiAsk.addEventListener('click', () => {
+    const q = aiQueryInput.value.trim();
+    if (q) executeAiQuery(q);
+  });
+}
+
+if (aiQueryInput) {
+  aiQueryInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const q = aiQueryInput.value.trim();
+      if (q) executeAiQuery(q);
+    }
+  });
+}
+
+document.querySelectorAll('.tag-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tag = btn.dataset.tag;
+    aiQueryInput.value = tag;
+    executeAiQuery(tag);
+  });
+});
+
+if (btnBeamToTv) {
+  btnBeamToTv.addEventListener('click', async () => {
+    if (!currentIntentUrl) return;
+    try {
+      await fetch(`${API_BASE}/api/beam`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intent_url: currentIntentUrl })
+      });
+      showToast('Beamed to TV!');
+      aiModal.classList.remove('active');
+    } catch (err) {
+      showToast('Failed to beam to TV');
+    }
+  });
+}
