@@ -1,0 +1,30 @@
+# Skyworth Digital 4K TV Stick (HP47DX2), Android 14, 1GB RAM
+# IP: 192.168.0.11:5555
+
+# ---- SKYWORTH / OEM FACTORY & TELEMETRY ----
+com.skyworth.smallclient
+com.skyworth.superservice
+com.sdt.producttest
+com.oem.qa
+com.oemservice
+com.sdt.customization
+com.sdt.projector.observer
+com.sdt.vendor
+com.homwee.howtocast
+com.mtf.ipcountry
+com.google.android.feedback
+com.android.tv.feedbackconsent
+
+# ---- HEAVY UNNEEDED BACKGROUND SERVICES (1GB RAM OPTIMIZATION) ----
+com.google.android.play.games
+com.google.android.syncadapters.calendar
+com.android.providers.calendar
+com.android.printspooler
+com.android.healthconnect.controller
+com.android.health.connect.backuprestore
+com.android.devicelockcontroller
+com.android.adservices.api
+com.android.ondevicepersonalization.services
+com.android.federatedcompute.services
+com.google.android.tvrecommendations
+com.google.android.tungsten.setupwraith
